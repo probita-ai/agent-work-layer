@@ -1,0 +1,24 @@
+{
+  "spec": "awl/work-order@0.1",
+  "id": "wo_risk_0001",
+  "created_at": "2026-10-09T09:00:00Z",
+  "from": "agent:analyst-manager",
+  "to": "agent:filings-researcher",
+  "goal": "Summarize the main credit risk factors for Example Corp from its latest annual report.",
+  "criteria": [
+    { "id": "c1", "text": "Lists at least three risk factors, each quoted from the filing" },
+    { "id": "c2", "text": "States total debt and the fiscal year it is reported for" }
+  ],
+  "budget": { "usd": 2.0, "tool_calls": 20 },
+  "deadline": "2026-10-09T12:00:00Z",
+  "tools": ["filings/*", "calc/ratio"],
+  "inputs": { "issuer": "Example Corp" },
+  "output_schema": {
+    "type": "object",
+    "required": ["risk_factors", "total_debt"],
+    "properties": {
+      "risk_factors": { "type": "array", "minItems": 3, "items": { "type": "string" } },
+      "total_debt": { "type": "object", "required": ["amount", "currency", "fiscal_year"] }
+    }
+  }
+}

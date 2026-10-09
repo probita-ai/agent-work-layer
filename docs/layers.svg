@@ -1,0 +1,91 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 792 452" width="792" height="452" role="img" aria-label="A manager agent and a worker agent connected by three layers: Agent Card for identity, A2A for messaging, and the new Work Order and Work Report layer. Below, a human sets goals for the manager and the worker reaches tools through MCP.">
+<style>
+svg{--bg:#f4f5f8;--surface:#ffffff;--fg:#171b24;--muted:#5a6376;--line:#c8cdd8;--accent:#2b57c4;--new:#c97a06;--new-bg:#fff4df;--ok:#1d8a59;--stop:#b8402f;
+--sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;--mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+@media (prefers-color-scheme: dark){svg{--bg:#0f1218;--surface:#171b24;--fg:#e6e9f0;--muted:#98a1b3;--line:#353c4a;--accent:#84a6ff;--new:#f0a83c;--new-bg:#2b2214;--ok:#4fc58c;--stop:#ef7a68}}
+.frame{fill:var(--bg)}
+
+.bx { fill: var(--surface); stroke: var(--line); stroke-width: 1.3; }
+.bx-new { fill: var(--new-bg); stroke: var(--new); stroke-width: 1.8; }
+.bx-ok { fill: var(--surface); stroke: var(--ok); stroke-width: 2; }
+.bx-end { fill: var(--bg); stroke: var(--muted); stroke-width: 1.2; stroke-dasharray: 4 3; }
+.bx-hdr { fill: var(--new-bg); stroke: none; }
+.ln { stroke: var(--muted); stroke-width: 1.5; fill: none; }
+.ln-d { stroke: var(--muted); stroke-width: 1.3; fill: none; stroke-dasharray: 5 4; }
+.ln-new { stroke: var(--new); stroke-width: 2.4; fill: none; }
+.ln-new-d { stroke: var(--new); stroke-width: 1.8; fill: none; stroke-dasharray: 5 4; }
+.ln-acc { stroke: var(--accent); stroke-width: 1.8; fill: none; }
+.ln-acc-d { stroke: var(--accent); stroke-width: 1.5; fill: none; stroke-dasharray: 5 4; }
+.ln-stop { stroke: var(--stop); stroke-width: 1.6; fill: none; stroke-dasharray: 5 4; }
+.life { stroke: var(--line); stroke-width: 1.2; stroke-dasharray: 3 4; }
+.sep { stroke: var(--line); stroke-width: 1; }
+.mk-g { fill: var(--muted); } .mk-n { fill: var(--new); } .mk-a { fill: var(--accent); } .mk-s { fill: var(--stop); }
+.dot { fill: var(--fg); }
+.t { fill: var(--fg); font: 13px var(--sans); }
+.tb { font-weight: 600; }
+.ts { fill: var(--muted); font: 12px var(--sans); }
+.tm { fill: var(--muted); font: 500 11px var(--mono); letter-spacing: .06em; }
+.tf { fill: var(--fg); font: 12.5px var(--mono); }
+.t-new { fill: var(--new); } .t-acc { fill: var(--accent); } .t-ok { fill: var(--ok); } .t-stop { fill: var(--stop); }
+.bar-bg { fill: var(--line); } .bar { fill: var(--new); }
+.loop { fill: none; stroke: var(--accent); stroke-width: 1.2; stroke-dasharray: 3 3; }
+</style>
+<defs>
+    <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk-g"/></marker>
+    <marker id="ahn" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk-n"/></marker>
+    <marker id="aha" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk-a"/></marker>
+    <marker id="ahs" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk-s"/></marker>
+  </defs>
+<rect class="frame" x="0" y="0" width="792" height="452" rx="12"/>
+<g transform="translate(16,16)">
+        <rect class="bx" x="20" y="40" width="150" height="260" rx="8"/>
+        <text class="tm" x="95" y="68" text-anchor="middle">ROLE</text>
+        <text class="t tb" x="95" y="90" text-anchor="middle">Manager agent</text>
+        <text class="ts" x="95" y="150" text-anchor="middle">plans the work</text>
+        <text class="ts" x="95" y="170" text-anchor="middle">assigns jobs</text>
+        <text class="ts" x="95" y="190" text-anchor="middle">checks results</text>
+
+        <rect class="bx" x="590" y="40" width="150" height="260" rx="8"/>
+        <text class="tm" x="665" y="68" text-anchor="middle">ROLE</text>
+        <text class="t tb" x="665" y="90" text-anchor="middle">Worker agent</text>
+        <text class="ts" x="665" y="150" text-anchor="middle">does the job</text>
+        <text class="ts" x="665" y="170" text-anchor="middle">uses tools</text>
+        <text class="ts" x="665" y="190" text-anchor="middle">reports back</text>
+
+        <rect class="bx" x="190" y="40" width="380" height="72" rx="6"/>
+        <text class="t tb" x="206" y="63">Agent Card</text>
+        <text class="tm" x="554" y="63" text-anchor="end">IDENTITY · EXISTS</text>
+        <text class="ts" x="380" y="86" text-anchor="middle">"who are you, what can you do?"</text>
+        <line class="ln" x1="588" y1="99" x2="174" y2="99" marker-end="url(#ah)"/>
+
+        <rect class="bx" x="190" y="126" width="380" height="72" rx="6"/>
+        <text class="t tb" x="206" y="149">A2A</text>
+        <text class="tm" x="554" y="149" text-anchor="end">MESSAGING · EXISTS</text>
+        <text class="ts" x="380" y="172" text-anchor="middle">"how do we send messages?"</text>
+        <line class="ln" x1="176" y1="185" x2="584" y2="185" marker-start="url(#ah)" marker-end="url(#ah)"/>
+
+        <rect class="bx-new" x="190" y="212" width="380" height="88" rx="6"/>
+        <text class="t tb" x="206" y="235">Work Order + Work Report</text>
+        <text class="tm t-new" x="554" y="235" text-anchor="end">WORK · AWL</text>
+        <text class="ts" x="380" y="256" text-anchor="middle">Work Order: "what's the job, and the limits?"</text>
+        <line class="ln-new" x1="172" y1="265" x2="586" y2="265" marker-end="url(#ahn)"/>
+        <text class="ts" x="380" y="282" text-anchor="middle">Work Report: "what was done, and the proof?"</text>
+        <line class="ln-new" x1="588" y1="291" x2="174" y2="291" marker-end="url(#ahn)"/>
+
+        <rect class="bx" x="20" y="352" width="150" height="50" rx="8"/>
+        <text class="t tb" x="95" y="374" text-anchor="middle">Human owner</text>
+        <text class="ts" x="95" y="391" text-anchor="middle">sets goals, approves</text>
+        <line class="ln" x1="75" y1="350" x2="75" y2="304" marker-end="url(#ah)"/>
+        <text class="ts" x="68" y="331" text-anchor="end">goal</text>
+        <line class="ln" x1="115" y1="302" x2="115" y2="348" marker-end="url(#ah)"/>
+        <text class="ts" x="122" y="331">escalates</text>
+
+        <rect class="bx" x="590" y="352" width="150" height="50" rx="8"/>
+        <text class="t tb" x="665" y="374" text-anchor="middle">Tools</text>
+        <text class="ts" x="665" y="391" text-anchor="middle">data · APIs · files</text>
+        <line class="ln-acc" x1="665" y1="302" x2="665" y2="348" marker-end="url(#aha)"/>
+        <text class="tm t-acc" x="673" y="331">MCP</text>
+
+        <text class="ts" x="380" y="381" text-anchor="middle">MCP links an agent to tools, never agent to agent</text>
+      </g>
+</svg>

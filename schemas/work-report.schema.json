@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://awl.dev/schemas/work-report-0.1.json",
+  "title": "AWL Work Report v0.1",
+  "type": "object",
+  "required": ["spec", "order_id", "from", "status", "result", "evidence", "cost", "finished_at", "tools_used"],
+  "properties": {
+    "spec": { "const": "awl/work-report@0.1" },
+    "order_id": { "type": "string", "minLength": 1 },
+    "from": { "type": "string", "minLength": 1, "maxLength": 512 },
+    "status": { "enum": ["done", "blocked", "failed"] },
+    "result": {
+      "type": "object",
+      "required": ["summary"],
+      "properties": {
+        "summary": { "type": "string" },
+        "output": {},
+        "artifacts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["uri"],
+            "properties": {
+              "uri": { "type": "string", "minLength": 1 },
+              "media_type": { "type": "string" },
+              "note": { "type": "string" }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["criterion", "type"],
+        "properties": {
+          "criterion": { "type": "string", "minLength": 1 },
+          "type": { "enum": ["tool_call", "artifact", "citation", "note"] },
+          "ref": { "type": "string" },
+          "note": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "cost": {
+      "type": "object",
+      "properties": {
+        "usd": { "type": "number", "minimum": 0 },
+        "tokens": { "type": "integer", "minimum": 0 },
+        "tool_calls": { "type": "integer", "minimum": 0 },
+        "seconds": { "type": "number", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    "started_at": { "type": "string", "format": "date-time" },
+    "finished_at": { "type": "string", "format": "date-time" },
+    "tools_used": { "type": "array", "items": { "type": "string", "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$" } },
+    "attempt": { "type": "integer", "minimum": 1 },
+    "questions": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+    "error": { "type": "string", "minLength": 1 },
+    "metadata": { "type": "object" }
+  },
+  "patternProperties": { "^x-": {} },
+  "additionalProperties": false
+}

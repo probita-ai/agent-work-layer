@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions and ideas
+    url: https://github.com/probita-ai/agent-work-layer/discussions
+    about: Ask how to use AWL or share what you built

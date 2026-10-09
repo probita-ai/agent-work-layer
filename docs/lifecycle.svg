@@ -1,0 +1,101 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 822 322" width="822" height="322" role="img" aria-label="State machine: Offered goes to Accepted or Declined. Accepted goes to Working. Working goes to Submitted, Blocked, or Expired. Blocked returns to Working. Submitted goes to Approved or back to Working if rejected.">
+<style>
+svg{--bg:#f4f5f8;--surface:#ffffff;--fg:#171b24;--muted:#5a6376;--line:#c8cdd8;--accent:#2b57c4;--new:#c97a06;--new-bg:#fff4df;--ok:#1d8a59;--stop:#b8402f;
+--sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;--mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+@media (prefers-color-scheme: dark){svg{--bg:#0f1218;--surface:#171b24;--fg:#e6e9f0;--muted:#98a1b3;--line:#353c4a;--accent:#84a6ff;--new:#f0a83c;--new-bg:#2b2214;--ok:#4fc58c;--stop:#ef7a68}}
+.frame{fill:var(--bg)}
+
+.bx { fill: var(--surface); stroke: var(--line); stroke-width: 1.3; }
+.bx-new { fill: var(--new-bg); stroke: var(--new); stroke-width: 1.8; }
+.bx-ok { fill: var(--surface); stroke: var(--ok); stroke-width: 2; }
+.bx-end { fill: var(--bg); stroke: var(--muted); stroke-width: 1.2; stroke-dasharray: 4 3; }
+.bx-hdr { fill: var(--new-bg); stroke: none; }
+.ln { stroke: var(--muted); stroke-width: 1.5; fill: none; }
+.ln-d { stroke: var(--muted); stroke-width: 1.3; fill: none; stroke-dasharray: 5 4; }
+.ln-new { stroke: var(--new); stroke-width: 2.4; fill: none; }
+.ln-new-d { stroke: var(--new); stroke-width: 1.8; fill: none; stroke-dasharray: 5 4; }
+.ln-acc { stroke: var(--accent); stroke-width: 1.8; fill: none; }
+.ln-acc-d { stroke: var(--accent); stroke-width: 1.5; fill: none; stroke-dasharray: 5 4; }
+.ln-stop { stroke: var(--stop); stroke-width: 1.6; fill: none; stroke-dasharray: 5 4; }
+.life { stroke: var(--line); stroke-width: 1.2; stroke-dasharray: 3 4; }
+.sep { stroke: var(--line); stroke-width: 1; }
+.mk-g { fill: var(--muted); } .mk-n { fill: var(--new); } .mk-a { fill: var(--accent); } .mk-s { fill: var(--stop); }
+.dot { fill: var(--fg); }
+.t { fill: var(--fg); font: 13px var(--sans); }
+.tb { font-weight: 600; }
+.ts { fill: var(--muted); font: 12px var(--sans); }
+.tm { fill: var(--muted); font: 500 11px var(--mono); letter-spacing: .06em; }
+.tf { fill: var(--fg); font: 12.5px var(--mono); }
+.t-new { fill: var(--new); } .t-acc { fill: var(--accent); } .t-ok { fill: var(--ok); } .t-stop { fill: var(--stop); }
+.bar-bg { fill: var(--line); } .bar { fill: var(--new); }
+.loop { fill: none; stroke: var(--accent); stroke-width: 1.2; stroke-dasharray: 3 3; }
+</style>
+<defs>
+    <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk-g"/></marker>
+    <marker id="ahn" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk-n"/></marker>
+    <marker id="aha" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk-a"/></marker>
+    <marker id="ahs" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk-s"/></marker>
+  </defs>
+<rect class="frame" x="0" y="0" width="822" height="322" rx="12"/>
+<g transform="translate(16,16)">
+        <circle class="dot" cx="24" cy="82" r="6"/>
+        <line class="ln" x1="30" y1="82" x2="48" y2="82" marker-end="url(#ah)"/>
+
+        <rect class="bx" x="50" y="60" width="130" height="44" rx="22"/>
+        <text class="tf tb" x="115" y="79" text-anchor="middle">OFFERED</text>
+        <text class="ts" x="115" y="95" text-anchor="middle">waiting on worker</text>
+
+        <rect class="bx" x="240" y="60" width="130" height="44" rx="22"/>
+        <text class="tf tb" x="305" y="79" text-anchor="middle">ACCEPTED</text>
+        <text class="ts" x="305" y="95" text-anchor="middle">worker committed</text>
+
+        <rect class="bx-new" x="430" y="60" width="130" height="44" rx="22"/>
+        <text class="tf tb" x="495" y="79" text-anchor="middle">WORKING</text>
+        <text class="ts" x="495" y="95" text-anchor="middle">spending budget</text>
+
+        <rect class="bx" x="620" y="60" width="130" height="44" rx="22"/>
+        <text class="tf tb" x="685" y="79" text-anchor="middle">SUBMITTED</text>
+        <text class="ts" x="685" y="95" text-anchor="middle">report sent</text>
+
+        <text class="ts" x="210" y="74" text-anchor="middle">accepts</text>
+        <line class="ln" x1="182" y1="82" x2="238" y2="82" marker-end="url(#ah)"/>
+        <text class="ts" x="400" y="74" text-anchor="middle">starts</text>
+        <line class="ln" x1="372" y1="82" x2="428" y2="82" marker-end="url(#ah)"/>
+        <text class="ts" x="590" y="74" text-anchor="middle">submits</text>
+        <line class="ln" x1="562" y1="82" x2="618" y2="82" marker-end="url(#ah)"/>
+
+        <path class="ln-new" d="M685 59 C685 18, 495 18, 495 57" marker-end="url(#ahn)"/>
+        <text class="ts t-new tb" x="590" y="14" text-anchor="middle">rejected → rework</text>
+
+        <rect class="bx-end" x="50" y="220" width="130" height="44" rx="22"/>
+        <text class="tf tb" x="115" y="239" text-anchor="middle">DECLINED</text>
+        <text class="ts" x="115" y="255" text-anchor="middle">end</text>
+
+        <rect class="bx-end" x="240" y="220" width="130" height="44" rx="22"/>
+        <text class="tf tb" x="305" y="239" text-anchor="middle">EXPIRED</text>
+        <text class="ts" x="305" y="255" text-anchor="middle">end</text>
+
+        <rect class="bx" x="430" y="220" width="130" height="44" rx="22"/>
+        <text class="tf tb" x="495" y="239" text-anchor="middle">BLOCKED</text>
+        <text class="ts" x="495" y="255" text-anchor="middle">asks escalate_to</text>
+
+        <rect class="bx-ok" x="620" y="220" width="130" height="44" rx="22"/>
+        <text class="tf tb t-ok" x="685" y="239" text-anchor="middle">APPROVED</text>
+        <text class="ts" x="685" y="255" text-anchor="middle">end · job closed</text>
+
+        <line class="ln" x1="115" y1="106" x2="115" y2="218" marker-end="url(#ah)"/>
+        <text class="ts" x="123" y="166">declines</text>
+
+        <line class="ln" x1="445" y1="104" x2="345" y2="218" marker-end="url(#ah)"/>
+        <text class="ts" x="384" y="150" text-anchor="end">over budget</text>
+        <text class="ts" x="384" y="165" text-anchor="end">or deadline</text>
+
+        <line class="ln" x1="480" y1="106" x2="480" y2="218" marker-end="url(#ah)"/>
+        <text class="ts" x="473" y="200" text-anchor="end">stuck</text>
+        <line class="ln" x1="515" y1="218" x2="515" y2="106" marker-end="url(#ah)"/>
+        <text class="ts" x="523" y="166">answered</text>
+
+        <line class="ln" x1="685" y1="106" x2="685" y2="218" marker-end="url(#ah)"/>
+        <text class="ts" x="693" y="166">passes review</text>
+      </g>
+</svg>

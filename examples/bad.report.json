@@ -1,0 +1,11 @@
+{
+  "spec": "awl/work-report@0.1",
+  "order_id": "wo_risk_0001",
+  "from": "agent:filings-researcher",
+  "status": "done",
+  "result": { "summary": "Risks found.", "output": { "risk_factors": ["Refinancing"] } },
+  "evidence": [{ "criterion": "c1", "type": "note" }],
+  "cost": { "usd": 3.1 },
+  "finished_at": "2026-10-09T13:00:00Z",
+  "tools_used": ["filings/search", "web/browse"]
+}

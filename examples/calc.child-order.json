@@ -1,0 +1,14 @@
+{
+  "spec": "awl/work-order@0.1",
+  "id": "wo_risk_0001_calc",
+  "created_at": "2026-10-09T09:05:00Z",
+  "from": "agent:filings-researcher",
+  "to": "agent:calc-bot",
+  "goal": "Compute debt-to-equity for Example Corp from the figures given.",
+  "criteria": [{ "id": "c1", "text": "Ratio given to two decimals with the inputs used" }],
+  "budget": { "usd": 0.2, "tool_calls": 3 },
+  "deadline": "2026-10-09T11:00:00Z",
+  "tools": ["calc/ratio"],
+  "inputs": { "total_debt": 1200000000, "total_equity": 800000000 },
+  "parent_id": "wo_risk_0001"
+}

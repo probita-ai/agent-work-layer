@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 792 407" width="792" height="407" role="img" aria-label="Delegation tree: the human holds full authority, passes a subset to the manager, which passes smaller subsets to two workers. A worker request beyond its pass is refused.">
+<style>
+svg{--bg:#f4f5f8;--surface:#ffffff;--fg:#171b24;--muted:#5a6376;--line:#c8cdd8;--accent:#2b57c4;--new:#c97a06;--new-bg:#fff4df;--ok:#1d8a59;--stop:#b8402f;
+--sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;--mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+@media (prefers-color-scheme: dark){svg{--bg:#0f1218;--surface:#171b24;--fg:#e6e9f0;--muted:#98a1b3;--line:#353c4a;--accent:#84a6ff;--new:#f0a83c;--new-bg:#2b2214;--ok:#4fc58c;--stop:#ef7a68}}
+.frame{fill:var(--bg)}
+
+.bx { fill: var(--surface); stroke: var(--line); stroke-width: 1.3; }
+.bx-new { fill: var(--new-bg); stroke: var(--new); stroke-width: 1.8; }
+.bx-ok { fill: var(--surface); stroke: var(--ok); stroke-width: 2; }
+.bx-end { fill: var(--bg); stroke: var(--muted); stroke-width: 1.2; stroke-dasharray: 4 3; }
+.bx-hdr { fill: var(--new-bg); stroke: none; }
+.ln { stroke: var(--muted); stroke-width: 1.5; fill: none; }
+.ln-d { stroke: var(--muted); stroke-width: 1.3; fill: none; stroke-dasharray: 5 4; }
+.ln-new { stroke: var(--new); stroke-width: 2.4; fill: none; }
+.ln-new-d { stroke: var(--new); stroke-width: 1.8; fill: none; stroke-dasharray: 5 4; }
+.ln-acc { stroke: var(--accent); stroke-width: 1.8; fill: none; }
+.ln-acc-d { stroke: var(--accent); stroke-width: 1.5; fill: none; stroke-dasharray: 5 4; }
+.ln-stop { stroke: var(--stop); stroke-width: 1.6; fill: none; stroke-dasharray: 5 4; }
+.life { stroke: var(--line); stroke-width: 1.2; stroke-dasharray: 3 4; }
+.sep { stroke: var(--line); stroke-width: 1; }
+.mk-g { fill: var(--muted); } .mk-n { fill: var(--new); } .mk-a { fill: var(--accent); } .mk-s { fill: var(--stop); }
+.dot { fill: var(--fg); }
+.t { fill: var(--fg); font: 13px var(--sans); }
+.tb { font-weight: 600; }
+.ts { fill: var(--muted); font: 12px var(--sans); }
+.tm { fill: var(--muted); font: 500 11px var(--mono); letter-spacing: .06em; }
+.tf { fill: var(--fg); font: 12.5px var(--mono); }
+.t-new { fill: var(--new); } .t-acc { fill: var(--accent); } .t-ok { fill: var(--ok); } .t-stop { fill: var(--stop); }
+.bar-bg { fill: var(--line); } .bar { fill: var(--new); }
+.loop { fill: none; stroke: var(--accent); stroke-width: 1.2; stroke-dasharray: 3 3; }
+</style>
+<defs>
+    <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk-g"/></marker>
+    <marker id="ahn" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk-n"/></marker>
+    <marker id="aha" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk-a"/></marker>
+    <marker id="ahs" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk-s"/></marker>
+  </defs>
+<rect class="frame" x="0" y="0" width="792" height="407" rx="12"/>
+<g transform="translate(16,16)">
+        <rect class="bx" x="270" y="16" width="220" height="80" rx="8"/>
+        <text class="tm" x="380" y="38" text-anchor="middle">HUMAN OWNER</text>
+        <text class="t" x="380" y="59" text-anchor="middle">full budget · all tools · all time</text>
+        <rect class="bar-bg" x="290" y="74" width="180" height="8" rx="4"/>
+        <rect class="bar" x="290" y="74" width="180" height="8" rx="4"/>
+
+        <line class="ln-new" x1="380" y1="98" x2="380" y2="144" marker-end="url(#ahn)"/>
+        <text class="ts t-new tb" x="390" y="125">Delegation Pass</text>
+
+        <rect class="bx" x="270" y="146" width="220" height="80" rx="8"/>
+        <text class="tm" x="380" y="168" text-anchor="middle">MANAGER AGENT</text>
+        <text class="t" x="380" y="189" text-anchor="middle">subset of owner's pass</text>
+        <rect class="bar-bg" x="290" y="204" width="180" height="8" rx="4"/>
+        <rect class="bar" x="290" y="204" width="90" height="8" rx="4"/>
+
+        <line class="ln-new" x1="330" y1="228" x2="240" y2="274" marker-end="url(#ahn)"/>
+        <text class="ts" x="276" y="250" text-anchor="end">narrower pass</text>
+        <line class="ln-new" x1="430" y1="228" x2="520" y2="274" marker-end="url(#ahn)"/>
+        <text class="ts" x="484" y="250">narrower pass</text>
+
+        <rect class="bx" x="100" y="276" width="220" height="80" rx="8"/>
+        <text class="tm" x="210" y="298" text-anchor="middle">WORKER AGENT A</text>
+        <text class="t" x="210" y="319" text-anchor="middle">subset of manager's pass</text>
+        <rect class="bar-bg" x="120" y="334" width="180" height="8" rx="4"/>
+        <rect class="bar" x="120" y="334" width="50" height="8" rx="4"/>
+
+        <rect class="bx" x="440" y="276" width="220" height="80" rx="8"/>
+        <text class="tm" x="550" y="298" text-anchor="middle">WORKER AGENT B</text>
+        <text class="t" x="550" y="319" text-anchor="middle">subset of manager's pass</text>
+        <rect class="bar-bg" x="460" y="334" width="180" height="8" rx="4"/>
+        <rect class="bar" x="460" y="334" width="25" height="8" rx="4"/>
+
+        <line class="ln-stop" x1="98" y1="300" x2="40" y2="300" marker-end="url(#ahs)"/>
+        <text class="ts t-stop tb" x="20" y="256">request beyond</text>
+        <text class="ts t-stop tb" x="20" y="272">its pass</text>
+        <text class="ts t-stop" x="20" y="322">refused</text>
+      </g>
+</svg>

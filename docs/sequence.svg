@@ -1,0 +1,84 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 792 572" width="792" height="572" role="img" aria-label="Sequence diagram: the human gives a goal to the manager, the manager reads the worker's Agent Card, sends a Work Order, the worker accepts, makes tool calls via MCP in a loop, returns a Work Report, the manager checks it against the criteria and reports to the human.">
+<style>
+svg{--bg:#f4f5f8;--surface:#ffffff;--fg:#171b24;--muted:#5a6376;--line:#c8cdd8;--accent:#2b57c4;--new:#c97a06;--new-bg:#fff4df;--ok:#1d8a59;--stop:#b8402f;
+--sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;--mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+@media (prefers-color-scheme: dark){svg{--bg:#0f1218;--surface:#171b24;--fg:#e6e9f0;--muted:#98a1b3;--line:#353c4a;--accent:#84a6ff;--new:#f0a83c;--new-bg:#2b2214;--ok:#4fc58c;--stop:#ef7a68}}
+.frame{fill:var(--bg)}
+
+.bx { fill: var(--surface); stroke: var(--line); stroke-width: 1.3; }
+.bx-new { fill: var(--new-bg); stroke: var(--new); stroke-width: 1.8; }
+.bx-ok { fill: var(--surface); stroke: var(--ok); stroke-width: 2; }
+.bx-end { fill: var(--bg); stroke: var(--muted); stroke-width: 1.2; stroke-dasharray: 4 3; }
+.bx-hdr { fill: var(--new-bg); stroke: none; }
+.ln { stroke: var(--muted); stroke-width: 1.5; fill: none; }
+.ln-d { stroke: var(--muted); stroke-width: 1.3; fill: none; stroke-dasharray: 5 4; }
+.ln-new { stroke: var(--new); stroke-width: 2.4; fill: none; }
+.ln-new-d { stroke: var(--new); stroke-width: 1.8; fill: none; stroke-dasharray: 5 4; }
+.ln-acc { stroke: var(--accent); stroke-width: 1.8; fill: none; }
+.ln-acc-d { stroke: var(--accent); stroke-width: 1.5; fill: none; stroke-dasharray: 5 4; }
+.ln-stop { stroke: var(--stop); stroke-width: 1.6; fill: none; stroke-dasharray: 5 4; }
+.life { stroke: var(--line); stroke-width: 1.2; stroke-dasharray: 3 4; }
+.sep { stroke: var(--line); stroke-width: 1; }
+.mk-g { fill: var(--muted); } .mk-n { fill: var(--new); } .mk-a { fill: var(--accent); } .mk-s { fill: var(--stop); }
+.dot { fill: var(--fg); }
+.t { fill: var(--fg); font: 13px var(--sans); }
+.tb { font-weight: 600; }
+.ts { fill: var(--muted); font: 12px var(--sans); }
+.tm { fill: var(--muted); font: 500 11px var(--mono); letter-spacing: .06em; }
+.tf { fill: var(--fg); font: 12.5px var(--mono); }
+.t-new { fill: var(--new); } .t-acc { fill: var(--accent); } .t-ok { fill: var(--ok); } .t-stop { fill: var(--stop); }
+.bar-bg { fill: var(--line); } .bar { fill: var(--new); }
+.loop { fill: none; stroke: var(--accent); stroke-width: 1.2; stroke-dasharray: 3 3; }
+</style>
+<defs>
+    <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk-g"/></marker>
+    <marker id="ahn" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk-n"/></marker>
+    <marker id="aha" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk-a"/></marker>
+    <marker id="ahs" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk-s"/></marker>
+  </defs>
+<rect class="frame" x="0" y="0" width="792" height="572" rx="12"/>
+<g transform="translate(16,16)">
+        <rect class="bx" x="25" y="12" width="130" height="38" rx="6"/>
+        <text class="t tb" x="90" y="36" text-anchor="middle">Human</text>
+        <rect class="bx" x="215" y="12" width="130" height="38" rx="6"/>
+        <text class="t tb" x="280" y="36" text-anchor="middle">Manager agent</text>
+        <rect class="bx" x="415" y="12" width="130" height="38" rx="6"/>
+        <text class="t tb" x="480" y="36" text-anchor="middle">Worker agent</text>
+        <rect class="bx" x="605" y="12" width="130" height="38" rx="6"/>
+        <text class="t tb" x="670" y="36" text-anchor="middle">Tools (MCP)</text>
+        <line class="life" x1="90" y1="50" x2="90" y2="525"/>
+        <line class="life" x1="280" y1="50" x2="280" y2="525"/>
+        <line class="life" x1="480" y1="50" x2="480" y2="525"/>
+        <line class="life" x1="670" y1="50" x2="670" y2="525"/>
+
+        <text class="ts" x="185" y="84" text-anchor="middle">goal</text>
+        <line class="ln" x1="90" y1="92" x2="276" y2="92" marker-end="url(#ah)"/>
+
+        <text class="ts" x="380" y="124" text-anchor="middle">fetch Agent Card</text>
+        <line class="ln" x1="280" y1="132" x2="476" y2="132" marker-end="url(#ah)"/>
+        <text class="ts" x="380" y="156" text-anchor="middle">skills + limits</text>
+        <line class="ln-d" x1="480" y1="164" x2="284" y2="164" marker-end="url(#ah)"/>
+
+        <text class="t tb t-new" x="380" y="198" text-anchor="middle">Work Order</text>
+        <line class="ln-new" x1="280" y1="207" x2="475" y2="207" marker-end="url(#ahn)"/>
+        <text class="ts" x="380" y="234" text-anchor="middle">accept / decline</text>
+        <line class="ln-new-d" x1="480" y1="242" x2="285" y2="242" marker-end="url(#ahn)"/>
+
+        <rect class="loop" x="470" y="262" width="270" height="110" rx="6"/>
+        <text class="tm t-acc" x="733" y="278" text-anchor="end">REPEAT AS NEEDED</text>
+        <text class="ts" x="575" y="296" text-anchor="middle">tool call</text>
+        <line class="ln-acc" x1="480" y1="304" x2="666" y2="304" marker-end="url(#aha)"/>
+        <text class="ts" x="575" y="336" text-anchor="middle">tool result</text>
+        <line class="ln-acc-d" x1="670" y1="344" x2="484" y2="344" marker-end="url(#aha)"/>
+
+        <text class="t tb t-new" x="380" y="404" text-anchor="middle">Work Report</text>
+        <line class="ln-new" x1="480" y1="413" x2="285" y2="413" marker-end="url(#ahn)"/>
+
+        <rect class="bx-new" x="200" y="430" width="160" height="40" rx="6"/>
+        <text class="t" x="280" y="447" text-anchor="middle">checks report</text>
+        <text class="ts" x="280" y="463" text-anchor="middle">against the criteria</text>
+
+        <text class="ts" x="185" y="500" text-anchor="middle">result, or escalate</text>
+        <line class="ln" x1="280" y1="508" x2="94" y2="508" marker-end="url(#ah)"/>
+      </g>
+</svg>

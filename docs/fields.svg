@@ -1,0 +1,100 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 792 412" width="792" height="412" role="img" aria-label="Work Order fields on the left matched row by row to Work Report fields on the right: id to order_id, goal to result, criteria to evidence, budget to cost, deadline to finished_at, tools to tools_used, escalate_to to status.">
+<style>
+svg{--bg:#f4f5f8;--surface:#ffffff;--fg:#171b24;--muted:#5a6376;--line:#c8cdd8;--accent:#2b57c4;--new:#c97a06;--new-bg:#fff4df;--ok:#1d8a59;--stop:#b8402f;
+--sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;--mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+@media (prefers-color-scheme: dark){svg{--bg:#0f1218;--surface:#171b24;--fg:#e6e9f0;--muted:#98a1b3;--line:#353c4a;--accent:#84a6ff;--new:#f0a83c;--new-bg:#2b2214;--ok:#4fc58c;--stop:#ef7a68}}
+.frame{fill:var(--bg)}
+
+.bx { fill: var(--surface); stroke: var(--line); stroke-width: 1.3; }
+.bx-new { fill: var(--new-bg); stroke: var(--new); stroke-width: 1.8; }
+.bx-ok { fill: var(--surface); stroke: var(--ok); stroke-width: 2; }
+.bx-end { fill: var(--bg); stroke: var(--muted); stroke-width: 1.2; stroke-dasharray: 4 3; }
+.bx-hdr { fill: var(--new-bg); stroke: none; }
+.ln { stroke: var(--muted); stroke-width: 1.5; fill: none; }
+.ln-d { stroke: var(--muted); stroke-width: 1.3; fill: none; stroke-dasharray: 5 4; }
+.ln-new { stroke: var(--new); stroke-width: 2.4; fill: none; }
+.ln-new-d { stroke: var(--new); stroke-width: 1.8; fill: none; stroke-dasharray: 5 4; }
+.ln-acc { stroke: var(--accent); stroke-width: 1.8; fill: none; }
+.ln-acc-d { stroke: var(--accent); stroke-width: 1.5; fill: none; stroke-dasharray: 5 4; }
+.ln-stop { stroke: var(--stop); stroke-width: 1.6; fill: none; stroke-dasharray: 5 4; }
+.life { stroke: var(--line); stroke-width: 1.2; stroke-dasharray: 3 4; }
+.sep { stroke: var(--line); stroke-width: 1; }
+.mk-g { fill: var(--muted); } .mk-n { fill: var(--new); } .mk-a { fill: var(--accent); } .mk-s { fill: var(--stop); }
+.dot { fill: var(--fg); }
+.t { fill: var(--fg); font: 13px var(--sans); }
+.tb { font-weight: 600; }
+.ts { fill: var(--muted); font: 12px var(--sans); }
+.tm { fill: var(--muted); font: 500 11px var(--mono); letter-spacing: .06em; }
+.tf { fill: var(--fg); font: 12.5px var(--mono); }
+.t-new { fill: var(--new); } .t-acc { fill: var(--accent); } .t-ok { fill: var(--ok); } .t-stop { fill: var(--stop); }
+.bar-bg { fill: var(--line); } .bar { fill: var(--new); }
+.loop { fill: none; stroke: var(--accent); stroke-width: 1.2; stroke-dasharray: 3 3; }
+</style>
+<defs>
+    <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk-g"/></marker>
+    <marker id="ahn" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk-n"/></marker>
+    <marker id="aha" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk-a"/></marker>
+    <marker id="ahs" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk-s"/></marker>
+  </defs>
+<rect class="frame" x="0" y="0" width="792" height="412" rx="12"/>
+<g transform="translate(16,16)">
+        <rect class="bx" x="20" y="20" width="270" height="340" rx="8"/>
+        <path class="bx-hdr" d="M28 20 H282 A8 8 0 0 1 290 28 V60 H20 V28 A8 8 0 0 1 28 20 Z"/>
+        <text class="tf tb" x="36" y="45">WORK ORDER</text>
+        <text class="ts" x="274" y="45" text-anchor="end">manager → worker</text>
+
+        <rect class="bx" x="470" y="20" width="270" height="340" rx="8"/>
+        <path class="bx-hdr" d="M478 20 H732 A8 8 0 0 1 740 28 V60 H470 V28 A8 8 0 0 1 478 20 Z"/>
+        <text class="tf tb" x="486" y="45">WORK REPORT</text>
+        <text class="ts" x="724" y="45" text-anchor="end">worker → manager</text>
+
+        <g>
+          <text class="tf" x="36" y="92">id</text><text class="ts" x="274" y="92" text-anchor="end">unique job id</text>
+          <text class="tf" x="486" y="92">order_id</text><text class="ts" x="724" y="92" text-anchor="end">same id</text>
+          <text class="ts" x="380" y="80" text-anchor="middle">links</text>
+          <line class="ln" x1="468" y1="88" x2="294" y2="88" marker-end="url(#ah)"/>
+          <line class="sep" x1="32" y1="110" x2="278" y2="110"/><line class="sep" x1="482" y1="110" x2="728" y2="110"/>
+        </g>
+        <g>
+          <text class="tf" x="36" y="132">goal</text><text class="ts" x="274" y="132" text-anchor="end">what to achieve</text>
+          <text class="tf" x="486" y="132">result</text><text class="ts" x="724" y="132" text-anchor="end">what was produced</text>
+          <text class="ts" x="380" y="120" text-anchor="middle">delivers</text>
+          <line class="ln" x1="468" y1="128" x2="294" y2="128" marker-end="url(#ah)"/>
+          <line class="sep" x1="32" y1="150" x2="278" y2="150"/><line class="sep" x1="482" y1="150" x2="728" y2="150"/>
+        </g>
+        <g>
+          <text class="tf" x="36" y="172">criteria</text><text class="ts" x="274" y="172" text-anchor="end">how to judge done</text>
+          <text class="tf" x="486" y="172">evidence</text><text class="ts" x="724" y="172" text-anchor="end">proof per criterion</text>
+          <text class="ts t-new tb" x="380" y="160" text-anchor="middle">proves each one</text>
+          <line class="ln-new" x1="468" y1="168" x2="294" y2="168" marker-end="url(#ahn)"/>
+          <line class="sep" x1="32" y1="190" x2="278" y2="190"/><line class="sep" x1="482" y1="190" x2="728" y2="190"/>
+        </g>
+        <g>
+          <text class="tf" x="36" y="212">budget</text><text class="ts" x="274" y="212" text-anchor="end">max spend</text>
+          <text class="tf" x="486" y="212">cost</text><text class="ts" x="724" y="212" text-anchor="end">actual spend</text>
+          <text class="ts t-new tb" x="380" y="200" text-anchor="middle">cost ≤ budget</text>
+          <line class="ln-new" x1="468" y1="208" x2="294" y2="208" marker-end="url(#ahn)"/>
+          <line class="sep" x1="32" y1="230" x2="278" y2="230"/><line class="sep" x1="482" y1="230" x2="728" y2="230"/>
+        </g>
+        <g>
+          <text class="tf" x="36" y="252">deadline</text><text class="ts" x="274" y="252" text-anchor="end">latest finish</text>
+          <text class="tf" x="486" y="252">finished_at</text><text class="ts" x="724" y="252" text-anchor="end">actual finish</text>
+          <text class="ts" x="380" y="240" text-anchor="middle">before deadline</text>
+          <line class="ln" x1="468" y1="248" x2="294" y2="248" marker-end="url(#ah)"/>
+          <line class="sep" x1="32" y1="270" x2="278" y2="270"/><line class="sep" x1="482" y1="270" x2="728" y2="270"/>
+        </g>
+        <g>
+          <text class="tf" x="36" y="292">tools</text><text class="ts" x="274" y="292" text-anchor="end">allowed tools</text>
+          <text class="tf" x="486" y="292">tools_used</text><text class="ts" x="724" y="292" text-anchor="end">tools actually used</text>
+          <text class="ts" x="380" y="280" text-anchor="middle">only allowed ones</text>
+          <line class="ln" x1="468" y1="288" x2="294" y2="288" marker-end="url(#ah)"/>
+          <line class="sep" x1="32" y1="310" x2="278" y2="310"/><line class="sep" x1="482" y1="310" x2="728" y2="310"/>
+        </g>
+        <g>
+          <text class="tf" x="36" y="332">escalate_to</text><text class="ts" x="274" y="332" text-anchor="end">who to ask</text>
+          <text class="tf" x="486" y="332">status</text><text class="ts" x="724" y="332" text-anchor="end">done | blocked | failed</text>
+          <text class="ts" x="380" y="320" text-anchor="middle">if stuck</text>
+          <line class="ln" x1="468" y1="328" x2="294" y2="328" marker-end="url(#ah)"/>
+        </g>
+      </g>
+</svg>

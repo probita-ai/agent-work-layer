@@ -1,0 +1,24 @@
+name: Bug report
+description: Something in the SDK, CLI or MCP server doesn't work as documented
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: Include the command or code you ran and the output.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Versions
+      placeholder: "agent-work-layer 0.1.0, Node 24.1"
+    validations:
+      required: true

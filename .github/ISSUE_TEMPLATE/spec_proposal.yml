@@ -1,0 +1,27 @@
+name: Spec proposal
+description: Propose a change to the Work Order / Work Report format
+labels: [spec]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What can't you express or check today? A concrete agent workflow helps most.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed change
+      description: New or changed fields, rules or states, with an example document.
+    validations:
+      required: true
+  - type: textarea
+    id: compat
+    attributes:
+      label: Compatibility
+      description: Do existing documents stay valid? Which rule ids are affected?
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered

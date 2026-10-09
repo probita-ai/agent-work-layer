@@ -1,0 +1,21 @@
+{
+  "spec": "awl/work-report@0.1",
+  "order_id": "wo_risk_0001",
+  "from": "agent:filings-researcher",
+  "status": "done",
+  "result": {
+    "summary": "Three main risks: refinancing, customer concentration, FX exposure. Total debt 1.2B USD for FY2025.",
+    "output": {
+      "risk_factors": ["Refinancing of 2027 notes", "Top 3 customers are 41% of revenue", "Unhedged EUR exposure"],
+      "total_debt": { "amount": 1200000000, "currency": "USD", "fiscal_year": 2025 }
+    }
+  },
+  "evidence": [
+    { "criterion": "c1", "type": "tool_call", "ref": "filings/get_section#call-3", "note": "Item 1A, pages 14-17" },
+    { "criterion": "c2", "type": "citation", "ref": "filings/get_section#call-5", "note": "Note 9, Debt" }
+  ],
+  "cost": { "usd": 0.84, "tool_calls": 7 },
+  "started_at": "2026-10-09T09:02:00Z",
+  "finished_at": "2026-10-09T09:11:00Z",
+  "tools_used": ["filings/search", "filings/get_section"]
+}

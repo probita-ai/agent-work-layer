@@ -47,6 +47,12 @@ if (!out.startsWith("ok ")) throw new Error(`import check failed: ${out}`);
 const version = run(join(app, "node_modules", ".bin", "awl"), ["--version"], app).trim();
 const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
 if (version !== pkg.version) throw new Error(`bin printed ${version}, expected ${pkg.version}`);
+const bin = join(app, "node_modules", ".bin", "awl");
+const orderFile = join(app, "order.json");
+const reportFile = join(app, "report.json");
+writeFileSync(orderFile, run(bin, ["new", "order"], app));
+writeFileSync(reportFile, run(bin, ["new", "report"], app));
+run(bin, ["validate", orderFile, reportFile], app);
 if (!existsSync(join(app, "node_modules", "agent-work-layer", "dist", "index.d.ts"))) throw new Error("types missing");
 
 console.log(`package ok: ${packed.filename}, ${files.length} files, ${(packed.size / 1024).toFixed(1)} kB`);

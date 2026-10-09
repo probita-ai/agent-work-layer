@@ -30,11 +30,53 @@ describe("awl CLI", () => {
       const r = awl(...args);
       assert.equal(r.code, 0);
       assert.match(r.out, /awl validate/);
+      assert.match(r.out, /awl new <order\|report>/);
     }
   });
 
   test("--version prints the package version", () => {
     assert.equal(awl("--version").out.trim(), VERSION);
+  });
+
+  test("new order prints a valid starter with a one-hour deadline", () => {
+    const before = Date.now();
+    const r = awl("new", "order");
+    const after = Date.now();
+    assert.equal(r.code, 0, r.err);
+    assert.equal(r.err, "");
+    const doc = JSON.parse(r.out);
+    assert.ok(Date.parse(doc.created_at) >= before && Date.parse(doc.created_at) <= after);
+    assert.equal(Date.parse(doc.deadline) - Date.parse(doc.created_at), 3_600_000);
+    assert.equal(doc.criteria.length, 1);
+    assert.deepEqual(doc.budget, { usd: 1 });
+    assert.deepEqual(doc.tools, []);
+    const validated = awl("validate", writeJson(doc));
+    assert.equal(validated.code, 0, validated.out + validated.err);
+  });
+
+  test("new report validates against the starter order without claiming completion", () => {
+    const o = awl("new", "order");
+    const before = Date.now();
+    const r = awl("new", "report");
+    const after = Date.now();
+    assert.equal(r.code, 0, r.err);
+    assert.equal(r.err, "");
+    const doc = JSON.parse(r.out);
+    assert.equal(doc.status, "blocked");
+    assert.ok(Date.parse(doc.finished_at) >= before && Date.parse(doc.finished_at) <= after);
+    const validated = awl("validate", writeJson(JSON.parse(o.out)), writeJson(doc), "--json");
+    assert.equal(validated.code, 0, validated.out + validated.err);
+    assert.equal(JSON.parse(validated.out).ok, true);
+    assert.deepEqual(JSON.parse(validated.out).results.map((x: { findings: unknown[] }) => x.findings), [[], []]);
+  });
+
+  test("new rejects missing, unknown and extra document types with exit 2", () => {
+    for (const args of [[], ["invoice"], ["order", "extra"], ["--json"]]) {
+      const r = awl("new", ...args);
+      assert.equal(r.code, 2);
+      assert.equal(r.out, "");
+      assert.match(r.err, /new needs "order" or "report"/);
+    }
   });
 
   test("validate passes the good example", () => {

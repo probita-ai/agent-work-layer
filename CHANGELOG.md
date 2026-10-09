@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- `awl new order` and `awl new report` print valid starter documents for editing.
+
 ## 0.1.1 — 2026-10-09
 
 - Package metadata now links to the GitHub repository, homepage and issue tracker.

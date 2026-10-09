@@ -123,12 +123,20 @@ await server.connect(transport);
 ## CLI
 
 ```sh
+npx agent-work-layer new order > order.json
+npx agent-work-layer new report > report.json
 npx agent-work-layer validate order.json report.json      # exit 1 on invalid, prints rule ids
 npx agent-work-layer validate child.json --parent order.json
 npx agent-work-layer validate order.json report.json --json
 npx agent-work-layer schema order
 npx agent-work-layer desk --store ./.awl --actor agent:worker
 ```
+
+`new order` starts with one criterion, a USD 1 budget, no allowed tools and a
+deadline one hour after creation. `new report` starts as `blocked`, with a question
+and no evidence of completed work. Both templates validate together as printed.
+Replace the placeholder goal, identities, criterion and report contents before
+using them; keep the report's `order_id` equal to the order's `id`.
 
 ## Lifecycle
 

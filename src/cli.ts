@@ -6,7 +6,8 @@ import { WorkDesk } from "./desk.ts";
 import { createDeskServer } from "./mcp.ts";
 import { FileStore } from "./store.ts";
 import { hasInvalid, validateChildOrder, validateOrder, validateReport, workOrderSchema, workReportSchema } from "./validate.ts";
-import type { Finding, WorkOrder } from "./types.ts";
+import { ORDER_SPEC, REPORT_SPEC } from "./types.ts";
+import type { Finding, WorkOrder, WorkReport } from "./types.ts";
 import { VERSION } from "./version.ts";
 
 const HELP = `awl ${VERSION} — Agent Work Layer
@@ -15,6 +16,7 @@ Usage:
   awl validate <order.json> [report.json] [--parent <parent-order.json>] [--json]
   awl desk [--store <dir>] [--actor <agent-ref>]     Run the desk as an MCP server on stdio
   awl schema <order|report>                          Print a JSON Schema
+  awl new <order|report>                             Print a starter document
   awl --version | --help
 
 Environment for "awl desk": AWL_STORE (default ./.awl), AWL_ACTOR.
@@ -29,6 +31,39 @@ function readJson(path: string): unknown {
 }
 
 class UsageError extends Error {}
+
+function newDocument(args: string[]): number {
+  const [which] = args;
+  if (args.length !== 1 || (which !== "order" && which !== "report")) {
+    throw new UsageError('new needs "order" or "report"');
+  }
+  const now = new Date();
+  const document: WorkOrder | WorkReport = which === "order" ? {
+    spec: ORDER_SPEC,
+    id: "wo_example",
+    created_at: now.toISOString(),
+    from: "agent:manager",
+    to: "agent:worker",
+    goal: "Replace with the work to be done",
+    criteria: [{ id: "c1", text: "Replace with a checkable acceptance criterion" }],
+    budget: { usd: 1 },
+    deadline: new Date(now.getTime() + 3_600_000).toISOString(),
+    tools: [],
+  } : {
+    spec: REPORT_SPEC,
+    order_id: "wo_example",
+    from: "agent:worker",
+    status: "blocked",
+    result: { summary: "Replace with the work performed so far" },
+    evidence: [],
+    cost: { usd: 0 },
+    finished_at: now.toISOString(),
+    tools_used: [],
+    questions: ["What work should be completed for criterion c1?"],
+  };
+  console.log(JSON.stringify(document, null, 2));
+  return 0;
+}
 
 function validate(args: string[]): number {
   const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { parent: { type: "string" }, json: { type: "boolean" } } });
@@ -70,6 +105,8 @@ async function desk(args: string[]): Promise<void> {
 async function main(argv: string[]): Promise<number | undefined> {
   const [command, ...rest] = argv;
   switch (command) {
+    case "new":
+      return newDocument(rest);
     case "validate":
       return validate(rest);
     case "desk":

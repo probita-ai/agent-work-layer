@@ -1,6 +1,6 @@
 {
   "name": "agent-work-layer",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Work Orders and Work Reports for AI agents: a typed SDK, validator, lifecycle desk and MCP server.",
   "keywords": [
     "ai",

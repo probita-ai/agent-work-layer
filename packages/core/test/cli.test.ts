@@ -9,7 +9,7 @@ import { WORKER, order, reportInput, tempDir } from "./helpers.ts";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const cli = join(root, "src", "cli.ts");
-const example = (name: string) => join(root, "examples", name);
+const example = (name: string) => join(root, "..", "..", "examples", name);
 
 function awl(...args: string[]) {
   const r = spawnSync(process.execPath, [cli, ...args], { encoding: "utf8", cwd: root });

@@ -31,14 +31,16 @@
     "awl-desk": "dist/cli.js"
   },
   "files": [
-    "dist"
+    "dist",
+    "LICENSE"
   ],
   "sideEffects": false,
   "scripts": {
     "build": "rm -rf dist && tsc -p tsconfig.build.json && chmod +x dist/cli.js",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "node --test \"test/**/*.test.ts\"",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "npm run build",
+    "prepack": "cp ../../LICENSE ."
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.1",
@@ -51,9 +53,9 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/probita-ai/agent-work-layer.git",
-    "directory": "mcp"
+    "directory": "packages/mcp"
   },
-  "homepage": "https://github.com/probita-ai/agent-work-layer/tree/main/mcp#readme",
+  "homepage": "https://github.com/probita-ai/agent-work-layer/tree/main/packages/mcp#readme",
   "bugs": {
     "url": "https://github.com/probita-ai/agent-work-layer/issues"
   }

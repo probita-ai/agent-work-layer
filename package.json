@@ -1,86 +1,26 @@
 {
-  "name": "agent-work-layer",
-  "version": "0.2.0",
-  "description": "Work Orders and Work Reports for AI agents: a typed SDK, validator and lifecycle desk. The MCP server is in agent-work-layer-mcp.",
-  "keywords": [
-    "ai",
-    "agents",
-    "multi-agent",
-    "mcp",
-    "model-context-protocol",
-    "a2a",
-    "work-order",
-    "llm",
-    "orchestration"
-  ],
+  "name": "agent-work-layer-repo",
+  "private": true,
+  "description": "Monorepo for agent-work-layer (packages/core) and agent-work-layer-mcp (packages/mcp).",
   "license": "Apache-2.0",
-  "author": "Probita",
   "type": "module",
-  "engines": {
-    "node": ">=20.11"
-  },
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
-  "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
-    },
-    "./validate": {
-      "types": "./dist/validator.d.ts",
-      "import": "./dist/validator.js"
-    },
-    "./schemas/work-order.schema.json": "./schemas/work-order.schema.json",
-    "./schemas/work-report.schema.json": "./schemas/work-report.schema.json",
-    "./package.json": "./package.json"
-  },
-  "bin": {
-    "awl": "dist/cli.js"
-  },
-  "files": [
-    "dist",
-    "schemas",
-    "SPEC.md",
-    "CHANGELOG.md"
-  ],
-  "sideEffects": false,
   "workspaces": [
-    "mcp"
+    "packages/core",
+    "packages/mcp"
   ],
   "scripts": {
-    "generate": "node scripts/generate.ts",
-    "build": "npm run build:core && npm run build -w agent-work-layer-mcp",
-    "build:core": "rm -rf dist && tsc -p tsconfig.build.json && chmod +x dist/cli.js",
-    "pretypecheck": "npm run build:core",
-    "typecheck": "tsc --noEmit -p tsconfig.json && npm run typecheck -w agent-work-layer-mcp",
-    "pretest": "npm run build:core",
-    "test": "node --test \"test/**/*.test.ts\" && npm test -w agent-work-layer-mcp",
-    "test:coverage": "node --test --experimental-test-coverage --test-coverage-include=\"src/**\" \"test/**/*.test.ts\"",
+    "build": "npm run build --workspaces",
+    "pretypecheck": "npm run build -w agent-work-layer",
+    "typecheck": "npm run typecheck --workspaces",
+    "pretest": "npm run build -w agent-work-layer",
+    "test": "npm test --workspaces",
+    "test:coverage": "npm run test:coverage -w agent-work-layer",
     "test:package": "npm run build && node scripts/package-smoke.ts",
     "check": "npm run typecheck && npm test && npm run test:package",
-    "version": "npm run generate && git add src/generated.ts",
-    "prepublishOnly": "npm run check"
-  },
-  "dependencies": {
-    "ajv": "^8.20.0",
-    "ajv-formats": "^3.0.1"
+    "generate": "npm run generate -w agent-work-layer"
   },
   "devDependencies": {
     "@types/node": "^22.20.5",
     "typescript": "^7.0.2"
-  },
-  "overrides": {
-    "agent-work-layer": "file:."
-  },
-  "publishConfig": {
-    "access": "public"
-  },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/probita-ai/agent-work-layer.git"
-  },
-  "homepage": "https://github.com/probita-ai/agent-work-layer#readme",
-  "bugs": {
-    "url": "https://github.com/probita-ai/agent-work-layer/issues"
   }
 }

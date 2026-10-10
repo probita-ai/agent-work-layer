@@ -1,0 +1,74 @@
+{
+  "name": "agent-work-layer",
+  "version": "0.2.0",
+  "description": "Work Orders and Work Reports for AI agents: a typed SDK, validator and lifecycle desk. The MCP server is in agent-work-layer-mcp.",
+  "keywords": [
+    "ai",
+    "agents",
+    "multi-agent",
+    "mcp",
+    "model-context-protocol",
+    "a2a",
+    "work-order",
+    "llm",
+    "orchestration"
+  ],
+  "license": "Apache-2.0",
+  "author": "Probita",
+  "type": "module",
+  "engines": {
+    "node": ">=20.11"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./validate": {
+      "types": "./dist/validator.d.ts",
+      "import": "./dist/validator.js"
+    },
+    "./schemas/work-order.schema.json": "./schemas/work-order.schema.json",
+    "./schemas/work-report.schema.json": "./schemas/work-report.schema.json",
+    "./package.json": "./package.json"
+  },
+  "bin": {
+    "awl": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "schemas",
+    "README.md",
+    "LICENSE",
+    "SPEC.md",
+    "CHANGELOG.md"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "generate": "node scripts/generate.ts",
+    "build": "rm -rf dist && tsc -p tsconfig.build.json && chmod +x dist/cli.js",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "node --test \"test/**/*.test.ts\"",
+    "test:coverage": "node --test --experimental-test-coverage --test-coverage-include=\"src/**\" \"test/**/*.test.ts\"",
+    "version": "node scripts/generate.ts",
+    "prepack": "cp ../../README.md ../../LICENSE ../../SPEC.md ../../CHANGELOG.md . && rm -rf schemas && cp -R ../../schemas schemas",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "ajv": "^8.20.0",
+    "ajv-formats": "^3.0.1"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/probita-ai/agent-work-layer.git"
+  },
+  "homepage": "https://github.com/probita-ai/agent-work-layer#readme",
+  "bugs": {
+    "url": "https://github.com/probita-ai/agent-work-layer/issues"
+  }
+}

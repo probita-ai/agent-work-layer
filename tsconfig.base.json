@@ -21,12 +21,6 @@
     "declaration": true,
     "declarationMap": true,
     "sourceMap": true,
-    "outDir": "dist",
     "noEmit": true
-  },
-  "include": [
-    "src",
-    "test",
-    "scripts"
-  ]
+  }
 }

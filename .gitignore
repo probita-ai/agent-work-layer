@@ -3,3 +3,10 @@ dist/
 coverage/
 .awl/
 *.tgz
+# Copied into the packages by their prepack scripts
+packages/core/README.md
+packages/core/LICENSE
+packages/core/SPEC.md
+packages/core/CHANGELOG.md
+packages/core/schemas/
+packages/mcp/LICENSE

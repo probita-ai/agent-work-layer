@@ -18,9 +18,9 @@ jobs:
           node-version: 24
           registry-url: https://registry.npmjs.org
       - run: npm ci
+      - run: npm run check
       # The core first: agent-work-layer-mcp depends on the version being released.
-      # The core's prepublishOnly runs `npm run check` (both packages); the MCP package's rebuilds its dist.
-      - run: npm publish --provenance --access public
+      - run: npm publish --workspace agent-work-layer --provenance --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
       - run: npm publish --workspace agent-work-layer-mcp --provenance --access public

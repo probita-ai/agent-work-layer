@@ -1,6 +1,6 @@
 # agent-work-layer
 
-**Work Orders and Work Reports for AI agents.** A typed SDK, validator and lifecycle engine for handing work from one agent to another, with checkable results. The MCP server is a separate package, [`agent-work-layer-mcp`](mcp/).
+**Work Orders and Work Reports for AI agents.** A typed SDK, validator and lifecycle engine for handing work from one agent to another, with checkable results. The MCP server is a separate package, [`agent-work-layer-mcp`](packages/mcp/).
 
 [![npm](https://img.shields.io/npm/v/agent-work-layer.svg)](https://www.npmjs.com/package/agent-work-layer)
 [![license](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
@@ -128,7 +128,7 @@ The JSON Schemas are exported too: `workOrderSchema`, `workReportSchema`, or `ag
 
 ## Run as an MCP server
 
-The server lives in its own package, [`agent-work-layer-mcp`](mcp/), so people who only validate documents don't download the MCP SDK.
+The server lives in its own package, [`agent-work-layer-mcp`](packages/mcp/), so people who only validate documents don't download the MCP SDK.
 
 Each agent session runs its own desk process. Sessions share one folder, and each is locked to one identity, so a worker cannot approve its own work.
 
@@ -226,7 +226,7 @@ The desk trusts the `actor` it is given. In production, derive the actor from au
 
 ## Development
 
-The repo holds two packages: the core at the root and the MCP server in [`mcp/`](mcp/) (an npm workspace that uses the local core).
+The repo is an npm workspace with two packages: the core in [`packages/core`](packages/core/) and the MCP server in [`packages/mcp`](packages/mcp/). The spec, schemas and examples stay at the root; the core copies them in when it is packed.
 
 ```sh
 npm install
@@ -235,7 +235,7 @@ npm run test:coverage
 npm run typecheck
 npm run test:package   # packs both packages, installs them in clean projects and uses them
 npm run check          # all of the above; runs automatically before npm publish
-npm run generate       # after editing schemas/*.json: refreshes src/generated.ts
+npm run generate       # after editing schemas/*.json: refreshes packages/core/src/generated.ts
 ```
 
 ## Contributing

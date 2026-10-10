@@ -19,8 +19,10 @@
 
 ### Changed
 
+- The repository is now an npm workspace: the core is in `packages/core`, the MCP server in `packages/mcp`. Published package contents are unchanged by this.
+
 - The desk writes `awl/work-order@0.2` and `awl/work-report@0.2`. Documents marked `@0.1` are still accepted, so stored orders keep working.
-- Schemas and the version number are built into the code (`src/generated.ts`) instead of read from disk at startup.
+- Schemas and the version number are built into the code (`packages/core/src/generated.ts`) instead of read from disk at startup.
 
 ## 0.1.1 — 2026-10-09
 

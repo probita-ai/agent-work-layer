@@ -27,8 +27,8 @@ describe("runtime independence", () => {
     const r = spawnSync(process.execPath, [fileURLToPath(new URL("scripts/generate.ts", root)), "--check"], { encoding: "utf8" });
     assert.equal(r.status, 0, r.stderr);
     assert.equal(VERSION, json("package.json").version);
-    assert.deepEqual(workOrderSchema, json("schemas/work-order.schema.json"));
-    assert.deepEqual(workReportSchema, json("schemas/work-report.schema.json"));
+    assert.deepEqual(workOrderSchema, json("../../schemas/work-order.schema.json"));
+    assert.deepEqual(workReportSchema, json("../../schemas/work-report.schema.json"));
   });
 
   test("agent-work-layer/validate imports nothing from Node", () => {

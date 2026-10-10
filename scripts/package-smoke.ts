@@ -7,7 +7,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const root = fileURLToPath(new URL("..", import.meta.url));
+const coreDir = fileURLToPath(new URL("../packages/core", import.meta.url));
+const mcpDir = fileURLToPath(new URL("../packages/mcp", import.meta.url));
 // Drop settings inherited from a parent npm command (e.g. dry-run during `npm publish --dry-run`).
 const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.toLowerCase().startsWith("npm_config_")));
 const run = (cmd: string, args: string[], cwd: string) => execFileSync(cmd, args, { cwd, env, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
@@ -44,15 +45,15 @@ function script(app: string, name: string, body: string) {
   if (!out.startsWith("ok")) fail(`${name} failed: ${out}`);
 }
 
-const corePkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
-const mcpPkg = JSON.parse(readFileSync(join(root, "mcp", "package.json"), "utf8"));
+const corePkg = JSON.parse(readFileSync(join(coreDir, "package.json"), "utf8"));
+const mcpPkg = JSON.parse(readFileSync(join(mcpDir, "package.json"), "utf8"));
 
-const core = pack(root, [
+const core = pack(coreDir, [
   "dist/index.js", "dist/index.d.ts", "dist/validator.js", "dist/validator.d.ts", "dist/generated.js", "dist/cli.js",
-  "schemas/work-order.schema.json", "schemas/work-report.schema.json", "README.md", "LICENSE", "SPEC.md",
+  "schemas/work-order.schema.json", "schemas/work-report.schema.json", "README.md", "LICENSE", "SPEC.md", "CHANGELOG.md",
 ]);
 if (core.files.includes("dist/mcp.js")) fail("core tarball still contains dist/mcp.js");
-const mcp = pack(join(root, "mcp"), ["dist/index.js", "dist/index.d.ts", "dist/cli.js", "README.md", "LICENSE"]);
+const mcp = pack(mcpDir, ["dist/index.js", "dist/index.d.ts", "dist/cli.js", "README.md", "LICENSE"]);
 
 // 1. The core on its own.
 const alone = project([core.tarball]);

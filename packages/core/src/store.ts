@@ -1,8 +1,10 @@
 // Storage for desks. Implement DeskStore to back a desk with a database.
 import { mkdir, readFile, readdir, rename, writeFile } from "node:fs/promises";
+import { createRequire } from "node:module";
 import { join } from "node:path";
 import { AwlError } from "./errors.ts";
 import type { OrderRecord } from "./types.ts";
+import type { DatabaseSync } from "node:sqlite";
 
 export interface DeskStore {
   /** Returns the record, or null when there is none. */
@@ -101,5 +103,59 @@ export class FileStore implements DeskStore {
     const files = (await readdir(this.dir)).filter((f) => f.endsWith(".json"));
     const records = await Promise.all(files.map((f) => this.read(f.slice(0, -5))));
     return records.filter((r): r is OrderRecord => r !== null);
+  }
+}
+
+/**
+ * One SQLite database, using Node's built-in `node:sqlite` (Node 22.13+). Pass a file path,
+ * or ":memory:" for a throwaway database. Several processes may share a file; the CONFLICT
+ * check is atomic (`UPDATE ... WHERE last_seq = ?`).
+ */
+export class SqliteStore implements DeskStore {
+  readonly db: DatabaseSync;
+
+  constructor(path = ":memory:") {
+    // Loaded here so importing the package does not need node:sqlite.
+    const { DatabaseSync } = createRequire(import.meta.url)("node:sqlite") as typeof import("node:sqlite");
+    this.db = new DatabaseSync(path);
+    this.db.exec(`
+      PRAGMA busy_timeout = 5000;
+      CREATE TABLE IF NOT EXISTS orders (
+        id TEXT PRIMARY KEY,
+        last_seq INTEGER NOT NULL,
+        record TEXT NOT NULL
+      ) STRICT;
+    `);
+  }
+
+  async read(id: string): Promise<OrderRecord | null> {
+    const row = this.db.prepare("SELECT record FROM orders WHERE id = ?").get(id) as { record: string } | undefined;
+    return row ? JSON.parse(row.record) : null;
+  }
+
+  async insert(record: OrderRecord) {
+    const { changes } = this.db
+      .prepare("INSERT INTO orders (id, last_seq, record) VALUES (?, ?, ?) ON CONFLICT (id) DO NOTHING")
+      .run(record.order.id, lastSeq(record), JSON.stringify(record));
+    if (!changes) throw new AwlError("ALREADY_EXISTS", `order "${record.order.id}" already exists`);
+  }
+
+  async update(record: OrderRecord, expectedSeq: number) {
+    const { changes } = this.db
+      .prepare("UPDATE orders SET last_seq = ?, record = ? WHERE id = ? AND last_seq = ?")
+      .run(lastSeq(record), JSON.stringify(record), record.order.id, expectedSeq);
+    if (changes) return;
+    if (!(await this.read(record.order.id))) throw new AwlError("NOT_FOUND", `no order "${record.order.id}"`);
+    throw new AwlError("CONFLICT", `order "${record.order.id}" changed since it was read`);
+  }
+
+  async list() {
+    const rows = this.db.prepare("SELECT record FROM orders ORDER BY id").all() as { record: string }[];
+    return rows.map((r) => JSON.parse(r.record) as OrderRecord);
+  }
+
+  /** Closes the database. */
+  close() {
+    this.db.close();
   }
 }

@@ -2,7 +2,7 @@ import { describe, test } from "node:test";
 import assert from "node:assert/strict";
 import { readdirSync } from "node:fs";
 import { join } from "node:path";
-import { FileStore, MemoryStore, WorkDesk } from "../src/index.ts";
+import { FileStore, MemoryStore, SqliteStore, WorkDesk } from "../src/index.ts";
 import type { DeskStore, OrderRecord } from "../src/index.ts";
 import { MANAGER, WORKER, order, orderInput, rejectsWith, tempDir } from "./helpers.ts";
 
@@ -24,6 +24,7 @@ const advanced = (r: OrderRecord): OrderRecord => ({
 const stores: [string, () => DeskStore][] = [
   ["MemoryStore", () => new MemoryStore()],
   ["FileStore", () => new FileStore(tempDir())],
+  ["SqliteStore", () => new SqliteStore()],
 ];
 
 for (const [name, make] of stores) {
@@ -116,5 +117,33 @@ describe("FileStore", () => {
     const { writeFileSync } = await import("node:fs");
     writeFileSync(join(dir, "orders", "notes.txt"), "hello");
     assert.equal((await store.list()).length, 1);
+  });
+});
+
+describe("SqliteStore", () => {
+  test("two stores on one file share orders", async () => {
+    const file = join(tempDir(), "desk.db");
+    const manager = new WorkDesk({ store: new SqliteStore(file) });
+    const worker = new WorkDesk({ store: new SqliteStore(file) });
+    const { order } = await manager.create(orderInput({ deadline: "2999-01-01T00:00:00Z" }), MANAGER);
+    await worker.accept(order.id, WORKER);
+    assert.equal((await manager.get(order.id)).state, "accepted");
+  });
+
+  test("keeps orders after the database is reopened", async () => {
+    const file = join(tempDir(), "desk.db");
+    const first = new SqliteStore(file);
+    await first.insert(record());
+    first.close();
+    assert.deepEqual(await new SqliteStore(file).read("wo_1"), record());
+  });
+
+  test("a stale update from another connection conflicts", async () => {
+    const file = join(tempDir(), "desk.db");
+    const a = new SqliteStore(file);
+    const b = new SqliteStore(file);
+    await a.insert(record());
+    await a.update(advanced(record()), 1);
+    await rejectsWith(b.update(advanced(record()), 1), "CONFLICT");
   });
 });

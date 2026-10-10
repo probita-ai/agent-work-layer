@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- `SqliteStore`: a `DeskStore` backed by SQLite through Node's built-in `node:sqlite` (Node 22.13+), with an atomic CONFLICT check (#1).
+
 ## 0.2.1 — 2026-10-09
 
 Documentation only; `agent-work-layer` alone (`agent-work-layer-mcp` stays at 0.2.0).

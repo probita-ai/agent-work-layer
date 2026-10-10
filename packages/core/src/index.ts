@@ -15,6 +15,6 @@ export { STATES, TERMINAL_STATES, ROLE_FOR, isTerminal, nextState, allowedAction
 export type { Role } from "./lifecycle.ts";
 export { WorkDesk, summarize, lastSeq } from "./desk.ts";
 export type { DeskOptions, ListFilter, WaitOptions, SubmitResult } from "./desk.ts";
-export { MemoryStore, FileStore } from "./store.ts";
+export { MemoryStore, FileStore, SqliteStore } from "./store.ts";
 export type { DeskStore } from "./store.ts";
 export { VERSION } from "./version.ts";

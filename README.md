@@ -40,7 +40,7 @@ Node.js 20.11 or later. ESM only. Types included.
 ```ts
 import { WorkDesk } from "agent-work-layer";
 
-const desk = new WorkDesk(); // in-memory; use FileStore or your own DeskStore to persist
+const desk = new WorkDesk(); // in-memory; use FileStore, SqliteStore or your own DeskStore to persist
 
 // Manager issues a job
 const { order } = await desk.create(
@@ -194,7 +194,7 @@ Any active state ──cancel──▶ cancelled   ·   deadline or budget excee
 | Export | Purpose |
 |---|---|
 | `WorkDesk` | Runs the lifecycle: `create`, `accept`, `decline`, `start`, `submitReport`, `answer`, `review`, `cancel`, `get`, `list`, `waitForChange` |
-| `MemoryStore`, `FileStore`, `DeskStore` | Storage. Implement `DeskStore` (4 methods) to use a database |
+| `MemoryStore`, `FileStore`, `SqliteStore`, `DeskStore` | Storage. Implement `DeskStore` (4 methods) to use a database |
 | `validateOrder`, `validateReport`, `validateChildOrder`, `hasInvalid` | Spec checks, returning `Finding[]` |
 | `isWorkOrder`, `isWorkReport` | Type guards |
 | `toolAllowed`, `patternCovered` | Tool pattern matching |
@@ -210,6 +210,16 @@ Any active state ──cancel──▶ cancelled   ·   deadline or budget excee
 `NOT_FOUND`, `ALREADY_EXISTS`, `FORBIDDEN`, `INVALID_TRANSITION`, `VALIDATION_FAILED` (with `findings`), `CONFLICT` (a concurrent writer got there first; re-read and retry), `BAD_REQUEST`.
 
 ### Custom storage
+
+`MemoryStore` keeps records in memory, `FileStore` writes one JSON file per order, and `SqliteStore` keeps them in a SQLite database using Node's built-in `node:sqlite` (Node 22.13+, no extra dependency):
+
+```ts
+import { WorkDesk, SqliteStore } from "agent-work-layer";
+
+const desk = new WorkDesk({ store: new SqliteStore("./awl.db") }); // or ":memory:"
+```
+
+To use another database, implement `DeskStore`:
 
 ```ts
 import type { DeskStore, OrderRecord } from "agent-work-layer";

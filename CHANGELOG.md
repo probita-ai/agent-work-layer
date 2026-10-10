@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.1 — 2026-10-09
+
+Documentation only; `agent-work-layer` alone (`agent-work-layer-mcp` stays at 0.2.0).
+
+- README: diagram of a handoff moving a job from one worker to the next.
+
 ## 0.2.0 — 2026-10-09
 
 ### Breaking

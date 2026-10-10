@@ -55,4 +55,4 @@ Guidelines:
 
 ## Releases
 
-Both packages share a version. Maintainers bump it in `packages/core/package.json` and `packages/mcp/package.json` (including the MCP package's dependency on the core), run `npm run generate`, and move the CHANGELOG entries under the new version. Then run `npm run check` and publish the core before the MCP package: `npm publish -w agent-work-layer`, then `npm publish -w agent-work-layer-mcp`. A GitHub release runs the same steps in the publish workflow when the repository has an `NPM_TOKEN` secret.
+Minor and major releases bump both packages to the same version; a patch may cover only the package it fixes. Maintainers bump the version in `packages/core/package.json` and `packages/mcp/package.json` (including the MCP package's dependency on the core), run `npm run generate`, and move the CHANGELOG entries under the new version. Then run `npm run check` and publish the core before the MCP package: `npm publish -w agent-work-layer`, then `npm publish -w agent-work-layer-mcp`. A GitHub release runs the same steps in the publish workflow when the repository has an `NPM_TOKEN` secret.

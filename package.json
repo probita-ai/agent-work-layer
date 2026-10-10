@@ -1,7 +1,7 @@
 {
   "name": "agent-work-layer",
-  "version": "0.1.2",
-  "description": "Work Orders and Work Reports for AI agents: a typed SDK, validator, lifecycle desk and MCP server.",
+  "version": "0.2.0",
+  "description": "Work Orders and Work Reports for AI agents: a typed SDK, validator and lifecycle desk. The MCP server is in agent-work-layer-mcp.",
   "keywords": [
     "ai",
     "agents",
@@ -26,9 +26,9 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
-    "./mcp": {
-      "types": "./dist/mcp.d.ts",
-      "import": "./dist/mcp.js"
+    "./validate": {
+      "types": "./dist/validator.d.ts",
+      "import": "./dist/validator.js"
     },
     "./schemas/work-order.schema.json": "./schemas/work-order.schema.json",
     "./schemas/work-report.schema.json": "./schemas/work-report.schema.json",
@@ -44,24 +44,33 @@
     "CHANGELOG.md"
   ],
   "sideEffects": false,
+  "workspaces": [
+    "mcp"
+  ],
   "scripts": {
-    "build": "rm -rf dist && tsc -p tsconfig.build.json && chmod +x dist/cli.js",
-    "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "node --test \"test/**/*.test.ts\"",
+    "generate": "node scripts/generate.ts",
+    "build": "npm run build:core && npm run build -w agent-work-layer-mcp",
+    "build:core": "rm -rf dist && tsc -p tsconfig.build.json && chmod +x dist/cli.js",
+    "pretypecheck": "npm run build:core",
+    "typecheck": "tsc --noEmit -p tsconfig.json && npm run typecheck -w agent-work-layer-mcp",
+    "pretest": "npm run build:core",
+    "test": "node --test \"test/**/*.test.ts\" && npm test -w agent-work-layer-mcp",
     "test:coverage": "node --test --experimental-test-coverage --test-coverage-include=\"src/**\" \"test/**/*.test.ts\"",
     "test:package": "npm run build && node scripts/package-smoke.ts",
     "check": "npm run typecheck && npm test && npm run test:package",
+    "version": "npm run generate && git add src/generated.ts",
     "prepublishOnly": "npm run check"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.32.1",
     "ajv": "^8.20.0",
-    "ajv-formats": "^3.0.1",
-    "zod": "^3.25.76"
+    "ajv-formats": "^3.0.1"
   },
   "devDependencies": {
     "@types/node": "^22.20.5",
     "typescript": "^7.0.2"
+  },
+  "overrides": {
+    "agent-work-layer": "file:."
   },
   "publishConfig": {
     "access": "public"

@@ -1,13 +1,11 @@
-import { describe, test, after } from "node:test";
+import { describe, test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { VERSION } from "../src/index.ts";
-import { MANAGER, WORKER, order, orderInput, reportInput, tempDir } from "./helpers.ts";
+import { WORKER, order, reportInput, tempDir } from "./helpers.ts";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const cli = join(root, "src", "cli.ts");
@@ -91,6 +89,11 @@ describe("awl CLI", () => {
     for (const rule of ["R4", "R5", "R6", "R7", "R8", "R11"]) assert.match(r.out, new RegExp(`\\b${rule}\\b`));
   });
 
+  test("validate passes a v0.2 order with a handoff", () => {
+    const r = awl("validate", example("csv-export.order.json"));
+    assert.equal(r.code, 0, r.out + r.err);
+  });
+
   test("validate --json prints machine-readable results", () => {
     const r = awl("validate", example("risk-summary.order.json"), example("bad.report.json"), "--json");
     const body = JSON.parse(r.out);
@@ -130,40 +133,14 @@ describe("awl CLI", () => {
     assert.match(awl("frobnicate").err, /unknown command/);
   });
 
-  test("schema prints both JSON Schemas", () => {
-    assert.equal(JSON.parse(awl("schema", "order").out).title, "AWL Work Order v0.1");
-    assert.equal(JSON.parse(awl("schema", "report").out).title, "AWL Work Report v0.1");
+  test("desk points to the MCP package", () => {
+    const r = awl("desk", "--actor", "agent:x");
+    assert.equal(r.code, 2);
+    assert.match(r.err, /npx -y agent-work-layer-mcp/);
   });
-});
 
-describe("awl desk over stdio", () => {
-  const clients: Client[] = [];
-  after(() => Promise.all(clients.map((c) => c.close())));
-
-  async function session(actor: string, store: string, viaFlags: boolean) {
-    const args = viaFlags ? [cli, "desk", "--store", store, "--actor", actor] : [cli, "desk"];
-    const env = viaFlags ? { ...process.env } : { ...process.env, AWL_STORE: store, AWL_ACTOR: actor };
-    const client = new Client({ name: actor, version: "0" });
-    await client.connect(new StdioClientTransport({ command: process.execPath, args, env: env as Record<string, string>, stderr: "ignore" }));
-    clients.push(client);
-    return async (name: string, a: Record<string, unknown>) => {
-      const r = (await client.callTool({ name, arguments: a })) as { isError?: boolean; content: { text: string }[] };
-      return { ok: !r.isError, body: JSON.parse(r.content[0].text) };
-    };
-  }
-
-  test("two processes coordinate through a shared folder", async () => {
-    const store = tempDir();
-    const manager = await session(MANAGER, store, true);
-    const worker = await session(WORKER, store, false);
-
-    const id = (await manager("create_work_order", { ...orderInput({ deadline: "2999-01-01T00:00:00Z" }) })).body.id;
-    const waiting = manager("wait_for_update", { id, since_seq: 1, timeout_s: 10 });
-    await worker("accept_work_order", { id });
-    assert.equal((await waiting).body.state, "accepted");
-
-    assert.equal((await worker("review_work_report", { id, decision: "approve", actor: MANAGER })).body.code, "FORBIDDEN");
-    await worker("submit_work_report", { id, ...reportInput() });
-    assert.equal((await manager("review_work_report", { id, decision: "approve" })).body.state, "approved");
+  test("schema prints both JSON Schemas", () => {
+    assert.equal(JSON.parse(awl("schema", "order").out).title, "AWL Work Order v0.2");
+    assert.equal(JSON.parse(awl("schema", "report").out).title, "AWL Work Report v0.2");
   });
 });

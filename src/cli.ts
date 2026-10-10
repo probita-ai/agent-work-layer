@@ -1,10 +1,6 @@
 #!/usr/bin/env node
 import { readFileSync } from "node:fs";
 import { parseArgs } from "node:util";
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { WorkDesk } from "./desk.ts";
-import { createDeskServer } from "./mcp.ts";
-import { FileStore } from "./store.ts";
 import { hasInvalid, validateChildOrder, validateOrder, validateReport, workOrderSchema, workReportSchema } from "./validate.ts";
 import { ORDER_SPEC, REPORT_SPEC } from "./types.ts";
 import type { Finding, WorkOrder, WorkReport } from "./types.ts";
@@ -14,12 +10,11 @@ const HELP = `awl ${VERSION} — Agent Work Layer
 
 Usage:
   awl validate <order.json> [report.json] [--parent <parent-order.json>] [--json]
-  awl desk [--store <dir>] [--actor <agent-ref>]     Run the desk as an MCP server on stdio
   awl schema <order|report>                          Print a JSON Schema
   awl new <order|report>                             Print a starter document
   awl --version | --help
 
-Environment for "awl desk": AWL_STORE (default ./.awl), AWL_ACTOR.
+The MCP desk server is a separate package: npx -y agent-work-layer-mcp
 Exit codes: 0 ok, 1 invalid document, 2 usage or file error.`;
 
 function readJson(path: string): unknown {
@@ -95,14 +90,7 @@ function validate(args: string[]): number {
   return failed ? 1 : 0;
 }
 
-async function desk(args: string[]): Promise<void> {
-  const { values } = parseArgs({ args, options: { store: { type: "string" }, actor: { type: "string" } } });
-  const store = new FileStore(values.store ?? process.env.AWL_STORE ?? ".awl");
-  const server = createDeskServer({ desk: new WorkDesk({ store }), actor: values.actor ?? process.env.AWL_ACTOR });
-  await server.connect(new StdioServerTransport());
-}
-
-async function main(argv: string[]): Promise<number | undefined> {
+function main(argv: string[]): number {
   const [command, ...rest] = argv;
   switch (command) {
     case "new":
@@ -110,8 +98,7 @@ async function main(argv: string[]): Promise<number | undefined> {
     case "validate":
       return validate(rest);
     case "desk":
-      await desk(rest);
-      return undefined; // keep running
+      throw new UsageError('"awl desk" moved to its own package in 0.2.0. Run: npx -y agent-work-layer-mcp --store <dir> --actor <agent-ref>');
     case "schema": {
       const which = rest[0];
       if (which !== "order" && which !== "report") throw new UsageError('schema needs "order" or "report"');
@@ -132,12 +119,9 @@ async function main(argv: string[]): Promise<number | undefined> {
   }
 }
 
-main(process.argv.slice(2)).then(
-  (code) => {
-    if (code !== undefined) process.exitCode = code;
-  },
-  (e) => {
-    console.error(e instanceof UsageError ? `awl: ${e.message}\n\n${HELP}` : e);
-    process.exitCode = 2;
-  },
-);
+try {
+  process.exitCode = main(process.argv.slice(2));
+} catch (e) {
+  console.error(e instanceof UsageError ? `awl: ${e.message}\n\n${HELP}` : e);
+  process.exitCode = 2;
+}

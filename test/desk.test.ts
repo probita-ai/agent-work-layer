@@ -1,6 +1,6 @@
 import { describe, test } from "node:test";
 import assert from "node:assert/strict";
-import { lastSeq, MemoryStore, ORDER_SPEC, WorkDesk } from "../src/index.ts";
+import { lastSeq, MemoryStore, ORDER_SPEC, REPORT_SPEC, WorkDesk } from "../src/index.ts";
 import type { WorkEvent } from "../src/index.ts";
 import {
   DEADLINE, HELPER, LEAD, MANAGER, STRANGER, T0, WORKER,
@@ -123,7 +123,7 @@ describe("lifecycle through the desk", () => {
     clock.set("2026-01-01T10:30:00Z");
     const { record } = await desk.submitReport(id, reportInput(), WORKER);
     const [r] = record.reports;
-    assert.equal(r.spec, "awl/work-report@0.1");
+    assert.equal(r.spec, REPORT_SPEC);
     assert.equal(r.order_id, id);
     assert.equal(r.from, WORKER);
     assert.equal(r.attempt, 1);

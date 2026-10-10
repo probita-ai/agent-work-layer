@@ -1,6 +1,6 @@
 # agent-work-layer
 
-**Work Orders and Work Reports for AI agents.** A typed SDK, validator, lifecycle engine and MCP server for handing work from one agent to another, with checkable results.
+**Work Orders and Work Reports for AI agents.** A typed SDK, validator and lifecycle engine for handing work from one agent to another, with checkable results. The MCP server is a separate package, [`agent-work-layer-mcp`](mcp/).
 
 [![npm](https://img.shields.io/npm/v/agent-work-layer.svg)](https://www.npmjs.com/package/agent-work-layer)
 [![license](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
@@ -25,9 +25,13 @@ More diagrams: [message sequence](docs/sequence.svg) · [lifecycle](docs/lifecyc
 
 ## Install
 
-```sh
-npm install agent-work-layer
-```
+Install only the part you use:
+
+| You want to… | Install | Packages |
+|---|---|---|
+| Validate orders and reports, or run a desk in your code | `npm install agent-work-layer` | 7 |
+| Validate in a browser, Deno or Bun | `npm install agent-work-layer`, then import `agent-work-layer/validate` | 7 |
+| Connect agent sessions (e.g. Claude Code) through MCP | `npx -y agent-work-layer-mcp` ([setup](#run-as-an-mcp-server)) | ~100 |
 
 Node.js 20.11 or later. ESM only. Types included.
 
@@ -84,6 +88,28 @@ The desk enforces the spec as you go:
 - Cost within budget and finishing before the deadline. Going over either expires the order.
 - Sub-orders can only narrow their parent's authority.
 
+### Hand off unfinished work
+
+When a worker fails, gets blocked or is cancelled, it can say what the next worker should know. The manager passes that along in the next order:
+
+```ts
+await desk.submitReport(order.id, {
+  status: "failed",
+  error: "Export runs out of memory on files over 2 GB",
+  handoff: {
+    decisions: [{ text: "Stream rows instead of buffering", why: "Memory limit" }],
+    tried: [{ text: "xlsx library", result: "Too slow on large files" }],
+    next_step: "Add tests for null cells",
+  },
+  /* result, evidence, cost, tools_used */
+}, "agent:researcher");
+
+const { handoff } = (await desk.get(order.id)).reports.at(-1)!;
+await desk.create({ ...nextJob, to: "agent:other-worker", handoff }, "agent:manager");
+```
+
+`context` lists what to read; `handoff` says what was decided and already tried. See [SPEC.md §4.4](SPEC.md#44-handoff).
+
 ## Validate documents
 
 ```ts
@@ -98,23 +124,27 @@ Every finding carries the rule id from [SPEC.md §7](SPEC.md#7-checks). `invalid
 
 The JSON Schemas are exported too: `workOrderSchema`, `workReportSchema`, or `agent-work-layer/schemas/work-order.schema.json`.
 
+`agent-work-layer/validate` has the same checks, types and schemas without the desk. It imports nothing from Node, so it runs in browsers, Deno and Bun. (Cloudflare Workers are not supported: the validator compiles schemas to code at runtime, which Workers block.)
+
 ## Run as an MCP server
+
+The server lives in its own package, [`agent-work-layer-mcp`](mcp/), so people who only validate documents don't download the MCP SDK.
 
 Each agent session runs its own desk process. Sessions share one folder, and each is locked to one identity, so a worker cannot approve its own work.
 
 ```sh
 # Claude Code: a manager session and a worker session, each added in its own project folder
-claude mcp add awl -e AWL_STORE="$HOME/.awl" -e AWL_ACTOR=agent:manager -- npx -y agent-work-layer desk
-claude mcp add awl -e AWL_STORE="$HOME/.awl" -e AWL_ACTOR=agent:worker  -- npx -y agent-work-layer desk
+claude mcp add awl -e AWL_STORE="$HOME/.awl" -e AWL_ACTOR=agent:manager -- npx -y agent-work-layer-mcp
+claude mcp add awl -e AWL_STORE="$HOME/.awl" -e AWL_ACTOR=agent:worker  -- npx -y agent-work-layer-mcp
 ```
 
 Tools: `create_work_order`, `list_work_orders`, `get_work_order`, `accept_work_order`, `decline_work_order`, `start_work_order`, `submit_work_report`, `answer_question`, `review_work_report`, `cancel_work_order`, `wait_for_update`.
 
-To embed the server in your own process or transport:
+To embed the server in your own process or transport (`npm install agent-work-layer agent-work-layer-mcp`):
 
 ```ts
 import { WorkDesk, FileStore } from "agent-work-layer";
-import { createDeskServer } from "agent-work-layer/mcp";
+import { createDeskServer } from "agent-work-layer-mcp";
 
 const server = createDeskServer({ desk: new WorkDesk({ store: new FileStore("./.awl") }), actor: "agent:manager" });
 await server.connect(transport);
@@ -129,7 +159,7 @@ npx agent-work-layer validate order.json report.json      # exit 1 on invalid, p
 npx agent-work-layer validate child.json --parent order.json
 npx agent-work-layer validate order.json report.json --json
 npx agent-work-layer schema order
-npx agent-work-layer desk --store ./.awl --actor agent:worker
+npx -y agent-work-layer-mcp --store ./.awl --actor agent:worker   # the MCP desk (was "awl desk" before 0.2)
 ```
 
 `new order` starts with one criterion, a USD 1 budget, no allowed tools and a
@@ -168,7 +198,8 @@ Any active state ──cancel──▶ cancelled   ·   deadline or budget excee
 | `toolAllowed`, `patternCovered` | Tool pattern matching |
 | `nextState`, `allowedActions`, `STATES`, `ROLE_FOR`, `isTerminal` | The state machine |
 | `AwlError`, `isAwlError` | Typed errors with `code` and `findings` |
-| `createDeskServer` (from `agent-work-layer/mcp`) | MCP server for a desk |
+| `ORDER_SPEC`, `REPORT_SPEC`, `ORDER_SPECS`, `REPORT_SPECS` | The spec version written, and every version read |
+| `createDeskServer` (from `agent-work-layer-mcp`) | MCP server for a desk |
 
 `WorkDesk` options: `store`, `clock` (for tests), `newId`, `onEvent(event, record)` (webhooks, logging, metrics).
 
@@ -195,13 +226,16 @@ The desk trusts the `actor` it is given. In production, derive the actor from au
 
 ## Development
 
+The repo holds two packages: the core at the root and the MCP server in [`mcp/`](mcp/) (an npm workspace that uses the local core).
+
 ```sh
 npm install
-npm test               # unit, integration and end-to-end tests
+npm test               # core and MCP tests (builds the core first)
 npm run test:coverage
 npm run typecheck
-npm run test:package   # builds, packs, installs the tarball in a clean project and uses it
+npm run test:package   # packs both packages, installs them in clean projects and uses them
 npm run check          # all of the above; runs automatically before npm publish
+npm run generate       # after editing schemas/*.json: refreshes src/generated.ts
 ```
 
 ## Contributing

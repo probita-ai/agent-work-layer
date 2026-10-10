@@ -1,6 +1,6 @@
-# Agent Work Layer (AWL) — Specification v0.1 (draft)
+# Agent Work Layer (AWL) — Specification v0.2 (draft)
 
-Status: draft · Date: 2026-10-09
+Status: draft · Date: 2026-10-09 · Changes from v0.1: the optional `handoff` field (§4.4); readers accept both versions (§11); related work (§13).
 
 ## 1. Purpose
 
@@ -39,7 +39,7 @@ The key words MUST, SHOULD and MAY are used as in RFC 2119.
 
 | Field          | Req | Type                | Meaning |
 |----------------|-----|---------------------|---------|
-| `spec`         | yes | `"awl/work-order@0.1"` | Format and version. |
+| `spec`         | yes | `"awl/work-order@0.2"` | Format and version. Readers also accept `@0.1` (§11). |
 | `id`           | yes | string              | Unique job id, set by the desk or manager. |
 | `created_at`   | yes | timestamp           | When the order was issued. |
 | `from`         | yes | agent ref           | The manager. |
@@ -52,6 +52,7 @@ The key words MUST, SHOULD and MAY are used as in RFC 2119.
 | `escalate_to`  | no  | agent ref           | Who to ask when blocked. Default: `from`. |
 | `inputs`       | no  | object              | Structured inputs for the job. |
 | `context`      | no  | array of `{uri, note?}` | Pointers to material the worker should read. |
+| `handoff`      | no  | Handoff (§4.4)      | What earlier work on this job established. |
 | `output_schema`| no  | JSON Schema         | Shape that `result.output` MUST match when done. |
 | `parent_id`    | no  | string              | Set when this order was split from a larger one (§8). |
 | `metadata`     | no  | object              | Free-form; ignored by checks. |
@@ -77,11 +78,35 @@ A Budget is an object with at least one of these units. Cost (in the report) use
 A tool is named `<server>/<tool>`, where `<server>` is the MCP server name as the worker knows it.
 Patterns: `server/tool` (exactly one tool), `server/*` (every tool on that server), `*` (any tool).
 
+### 4.4 Handoff
+
+When a job moves from one worker to another (after a failure, a cancellation or a block), the next worker should not start from nothing. `context` says what to read; `handoff` says what was decided, what was already tried, and where things stand.
+
+```json
+"handoff": {
+  "summary": "Parser done; export fails on files over 2 GB",
+  "decisions": [{ "text": "Stream rows instead of buffering", "why": "Memory limit" }],
+  "tried": [{ "text": "xlsx library", "result": "Too slow on large files" }],
+  "open_questions": ["Quote style for commas?"],
+  "next_step": "Add tests for null cells"
+}
+```
+
+| Field            | Type                          | Meaning |
+|------------------|-------------------------------|---------|
+| `summary`        | string                        | Where the work stands. |
+| `decisions`      | array of `{text, why?}`       | Choices already made, and why. The next worker SHOULD keep them unless it has a reason not to. |
+| `tried`          | array of `{text, result?}`    | Approaches already attempted and what happened, so they are not repeated. |
+| `open_questions` | array of string               | Questions still unanswered. |
+| `next_step`      | string                        | The most useful thing to do next. |
+
+Every field is optional, but a handoff MUST NOT be empty. A Work Report MAY carry a handoff (§5); a worker SHOULD include one when it reports `failed` or `blocked`. A manager reissuing the job MAY copy it, edited or not, into the new order. Handoff content is the previous worker's account, not verified fact; it is not checked against evidence.
+
 ## 5. Work Report
 
 | Field         | Req | Type                    | Meaning |
 |---------------|-----|-------------------------|---------|
-| `spec`        | yes | `"awl/work-report@0.1"` | Format and version. |
+| `spec`        | yes | `"awl/work-report@0.2"` | Format and version. Readers also accept `@0.1` (§11). |
 | `order_id`    | yes | string                  | The order this answers. |
 | `from`        | yes | agent ref               | The worker. |
 | `status`      | yes | `done` \| `blocked` \| `failed` | Outcome of this attempt. |
@@ -94,6 +119,7 @@ Patterns: `server/tool` (exactly one tool), `server/*` (every tool on that serve
 | `attempt`     | no  | integer ≥ 1             | 1 for the first report, +1 after each rework. |
 | `questions`   | no  | array of string         | Open questions. Required when `blocked`. |
 | `error`       | no  | string                  | What went wrong. Required when `failed`. |
+| `handoff`     | no  | Handoff (§4.4)          | What whoever continues this job should know. |
 | `metadata`    | no  | object                  | Free-form. |
 
 ### 5.1 Evidence
@@ -184,7 +210,7 @@ A desk MUST reject a child order that breaks C1–C3. The parent's reported cost
 How AWL documents travel. A desk MAY support several.
 
 - **Files**: `<id>.order.json` and `<id>.report.json` side by side. Good for tests and audit archives.
-- **MCP**: a desk exposed as an MCP server with tools such as `create_work_order`, `submit_work_report` and `review_work_report`. The reference implementation in this repo works this way.
+- **MCP**: a desk exposed as an MCP server with tools such as `create_work_order`, `submit_work_report` and `review_work_report`. The reference implementation is the `agent-work-layer-mcp` package in this repo.
 - **A2A**: the document travels as a data part of an A2A message with the AWL media type. The A2A task id SHOULD be stored in `metadata.a2a_task_id`.
 
 ## 10. Security
@@ -197,8 +223,21 @@ How AWL documents travel. A desk MAY support several.
 
 `spec` carries the version. Minor versions (0.x) may add optional fields only. Readers MUST reject a major version they do not know.
 
+A v0.2 reader MUST accept documents marked `@0.1` and `@0.2`, and MUST reject any other version. A v0.2 writer marks new documents `@0.2`. Every v0.1 document is a valid v0.2 document once its version is accepted.
+
 ## 12. Planned for later versions
 
 - Delegation Pass: a signed, standalone grant of budget, tools and time.
 - Track record: an aggregate of approved reports per worker.
 - Streaming progress events while `working`.
+
+## 13. Related work
+
+AWL overlaps with these efforts and is meant to work alongside them.
+
+| Work | What it covers | How AWL relates |
+|------|----------------|-----------------|
+| Agent Contracts (Ye and Tan, 2026, [arXiv:2601.08815](https://arxiv.org/abs/2601.08815)) | A formal model of resource-bounded agents: budgets, deadlines, weighted success criteria, and sub-contracts whose budgets may not exceed the parent's. | Close in intent. AWL is a wire format (JSON documents, JSON Schemas, numbered checks) with evidence per criterion, separate manager and worker roles, and review. Its sub-order rules (§8) are the same conservation idea. |
+| A2A tasks ([a2a-protocol.org](https://a2a-protocol.org)) | Task lifecycle and message transport between agents. | AWL describes the job and its proof; the A2A binding (§9) carries AWL documents inside A2A messages. |
+| IETF [draft-reece-wimse-cross-org-delegation](https://datatracker.ietf.org/doc/draft-reece-wimse-cross-org-delegation/) | Requirements for authority that can only narrow at each delegation hop, verifiable across organizations. | Same principle as §8. Input for the planned Delegation Pass (§12). |
+| KYA-OS / MCP-I ([@kya-os/mcp](https://www.npmjs.com/package/@kya-os/mcp)) | Agent identity, delegation credentials and verifiable audit for MCP servers. | Identifies the actor, not the job. A desk can use such credentials to meet §10's requirement to authenticate `actor`. |

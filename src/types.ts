@@ -1,7 +1,12 @@
-/** Document types for AWL v0.1. Field meanings are defined in SPEC.md §4 and §5. */
+/** Document types for AWL v0.2. Field meanings are defined in SPEC.md §4 and §5. */
 
-export const ORDER_SPEC = "awl/work-order@0.1";
-export const REPORT_SPEC = "awl/work-report@0.1";
+/** The spec version this package writes. */
+export const ORDER_SPEC = "awl/work-order@0.2";
+export const REPORT_SPEC = "awl/work-report@0.2";
+
+/** Every spec version this package reads (SPEC.md §11). */
+export const ORDER_SPECS = ["awl/work-order@0.1", ORDER_SPEC] as const;
+export const REPORT_SPECS = ["awl/work-report@0.1", REPORT_SPEC] as const;
 
 /** An Agent Card URL, an agent name, or `human:<id>`. */
 export type AgentRef = string;
@@ -21,8 +26,17 @@ export interface ContextRef {
   note?: string;
 }
 
+/** What the next worker should know: decisions, dead ends and where work stands (SPEC.md §4.4). */
+export interface Handoff {
+  summary?: string;
+  decisions?: { text: string; why?: string }[];
+  tried?: { text: string; result?: string }[];
+  open_questions?: string[];
+  next_step?: string;
+}
+
 export interface WorkOrder {
-  spec: typeof ORDER_SPEC;
+  spec: (typeof ORDER_SPECS)[number];
   id: string;
   created_at: string;
   from: AgentRef;
@@ -36,6 +50,7 @@ export interface WorkOrder {
   escalate_to?: AgentRef;
   inputs?: Record<string, unknown>;
   context?: ContextRef[];
+  handoff?: Handoff;
   output_schema?: Record<string, unknown>;
   parent_id?: string;
   metadata?: Record<string, unknown>;
@@ -65,7 +80,7 @@ export interface WorkResult {
 }
 
 export interface WorkReport {
-  spec: typeof REPORT_SPEC;
+  spec: (typeof REPORT_SPECS)[number];
   order_id: string;
   from: AgentRef;
   status: ReportStatus;
@@ -79,6 +94,7 @@ export interface WorkReport {
   attempt?: number;
   questions?: string[];
   error?: string;
+  handoff?: Handoff;
   metadata?: Record<string, unknown>;
   [extension: `x-${string}`]: unknown;
 }

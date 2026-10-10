@@ -1,8 +1,9 @@
-// Checks from SPEC.md §7 (orders and reports) and §8 (sub-orders).
-import { readFileSync } from "node:fs";
+// Checks from SPEC.md §7 (orders and reports) and §8 (sub-orders). No Node built-ins here:
+// the validator also runs in browsers, Deno and Bun (see src/validator.ts).
 import Ajv2020Module from "ajv/dist/2020.js";
 import addFormatsModule from "ajv-formats";
 import type { ErrorObject, ValidateFunction } from "ajv";
+import { workOrderSchema, workReportSchema } from "./generated.ts";
 import { UNITS } from "./types.ts";
 import type { Finding, WorkOrder, WorkReport } from "./types.ts";
 
@@ -16,12 +17,8 @@ function newAjv() {
   return ajv;
 }
 
-const loadSchema = (file: string): Record<string, unknown> =>
-  JSON.parse(readFileSync(new URL(`../schemas/${file}`, import.meta.url), "utf8"));
-
 /** The JSON Schemas shipped with this package. */
-export const workOrderSchema = loadSchema("work-order.schema.json");
-export const workReportSchema = loadSchema("work-report.schema.json");
+export { workOrderSchema, workReportSchema };
 
 const ajv = newAjv();
 const orderShape = ajv.compile<WorkOrder>(workOrderSchema);

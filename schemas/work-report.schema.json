@@ -1,11 +1,11 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://awl.dev/schemas/work-report-0.1.json",
-  "title": "AWL Work Report v0.1",
+  "$id": "https://awl.dev/schemas/work-report-0.2.json",
+  "title": "AWL Work Report v0.2",
   "type": "object",
   "required": ["spec", "order_id", "from", "status", "result", "evidence", "cost", "finished_at", "tools_used"],
   "properties": {
-    "spec": { "const": "awl/work-report@0.1" },
+    "spec": { "enum": ["awl/work-report@0.1", "awl/work-report@0.2"] },
     "order_id": { "type": "string", "minLength": 1 },
     "from": { "type": "string", "minLength": 1, "maxLength": 512 },
     "status": { "enum": ["done", "blocked", "failed"] },
@@ -61,8 +61,39 @@
     "attempt": { "type": "integer", "minimum": 1 },
     "questions": { "type": "array", "items": { "type": "string", "minLength": 1 } },
     "error": { "type": "string", "minLength": 1 },
+    "handoff": { "$ref": "#/$defs/handoff" },
     "metadata": { "type": "object" }
   },
   "patternProperties": { "^x-": {} },
-  "additionalProperties": false
+  "additionalProperties": false,
+  "$defs": {
+    "handoff": {
+      "type": "object",
+      "minProperties": 1,
+      "properties": {
+        "summary": { "type": "string", "minLength": 1 },
+        "decisions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["text"],
+            "properties": { "text": { "type": "string", "minLength": 1 }, "why": { "type": "string" } },
+            "additionalProperties": false
+          }
+        },
+        "tried": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["text"],
+            "properties": { "text": { "type": "string", "minLength": 1 }, "result": { "type": "string" } },
+            "additionalProperties": false
+          }
+        },
+        "open_questions": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "next_step": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    }
+  }
 }

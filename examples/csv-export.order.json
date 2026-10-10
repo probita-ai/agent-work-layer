@@ -1,0 +1,23 @@
+{
+  "spec": "awl/work-order@0.2",
+  "id": "wo_csv_0002",
+  "created_at": "2026-10-10T09:00:00Z",
+  "from": "agent:eng-manager",
+  "to": "agent:coder-b",
+  "goal": "Finish the CSV export for the orders table. A previous worker failed; see handoff.",
+  "criteria": [
+    { "id": "c1", "text": "Exports a 3 GB table without running out of memory" },
+    { "id": "c2", "text": "Null cells are written as empty fields, with a test" }
+  ],
+  "budget": { "usd": 3, "seconds": 3600 },
+  "deadline": "2026-10-10T17:00:00Z",
+  "tools": ["repo/*", "shell/run_tests"],
+  "context": [{ "uri": "repo://src/export.ts", "note": "Export entry point" }],
+  "handoff": {
+    "summary": "Parser done; export fails on files over 2 GB",
+    "decisions": [{ "text": "Stream rows instead of buffering", "why": "Memory limit on the worker" }],
+    "tried": [{ "text": "xlsx library", "result": "Too slow on large files" }],
+    "open_questions": ["Quote style for fields that contain commas?"],
+    "next_step": "Add tests for null cells"
+  }
+}

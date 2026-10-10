@@ -1,11 +1,8 @@
 // The desk as an MCP server (SPEC.md §9, MCP binding).
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { AwlError } from "./errors.ts";
-import { STATES } from "./lifecycle.ts";
-import { summarize } from "./desk.ts";
-import type { WorkDesk } from "./desk.ts";
-import type { OrderRecord, State, WorkOrderInput, WorkReportInput } from "./types.ts";
+import { AwlError, STATES, summarize } from "agent-work-layer";
+import type { OrderRecord, State, WorkDesk, WorkOrderInput, WorkReportInput } from "agent-work-layer";
 import { VERSION } from "./version.ts";
 
 export interface DeskServerOptions {
@@ -24,6 +21,15 @@ const amounts = z
     tokens: z.number().int().min(0).optional(),
     tool_calls: z.number().int().min(0).optional(),
     seconds: z.number().min(0).optional(),
+  })
+  .strict();
+const handoff = z
+  .object({
+    summary: z.string().optional(),
+    decisions: z.array(z.object({ text: z.string(), why: z.string().optional() })).optional(),
+    tried: z.array(z.object({ text: z.string(), result: z.string().optional() })).optional(),
+    open_questions: z.array(z.string()).optional(),
+    next_step: z.string().optional(),
   })
   .strict();
 const actorArg = z.string().optional().describe("Who is acting. Omit to use this session's identity.");
@@ -72,6 +78,7 @@ export function createDeskServer({ desk, actor: sessionActor, name = "awl-work-d
         escalate_to: z.string().optional(),
         inputs: z.record(z.any()).optional(),
         context: z.array(z.object({ uri: z.string(), note: z.string().optional() })).optional(),
+        handoff: handoff.optional().describe("What a previous worker learned: decisions, what was tried, open questions, next step"),
         output_schema: z.record(z.any()).optional().describe("JSON Schema that result.output must match"),
         parent_id: z.string().optional(),
         id: z.string().optional().describe("Optional explicit id"),
@@ -148,6 +155,7 @@ export function createDeskServer({ desk, actor: sessionActor, name = "awl-work-d
         finished_at: z.string().optional(),
         questions: z.array(z.string()).optional(),
         error: z.string().optional(),
+        handoff: handoff.optional().describe("For whoever continues this job: decisions, what was tried, open questions, next step"),
         metadata: z.record(z.any()).optional(),
       },
     },

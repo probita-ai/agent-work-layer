@@ -1,4 +1,2 @@
-import { readFileSync } from "node:fs";
-
-/** This package's version, read from package.json. */
-export const VERSION: string = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
+/** This package's version, from package.json (written into src/generated.ts at build time). */
+export { VERSION } from "./generated.ts";

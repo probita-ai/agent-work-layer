@@ -1,8 +1,26 @@
 # Changelog
 
-## Unreleased
+## 0.2.0 — 2026-10-09
 
-- `awl new order` and `awl new report` print valid starter documents for editing.
+### Breaking
+
+- The MCP server moved to a new package, `agent-work-layer-mcp`, so installing `agent-work-layer` no longer downloads the MCP SDK and zod (7 packages instead of 97).
+  - `npx -y agent-work-layer desk` → `npx -y agent-work-layer-mcp` (same flags and environment variables).
+  - `import { createDeskServer } from "agent-work-layer/mcp"` → `from "agent-work-layer-mcp"`.
+  - `awl desk` now exits with code 2 and prints the new command.
+
+### Added
+
+- Spec v0.2: optional `handoff` on Work Orders and Work Reports: decisions made, approaches tried, open questions and next step, so a job can move to another worker without starting over (SPEC.md §4.4). The MCP tools accept it too.
+- `agent-work-layer/validate`: types, schemas and every check, with no Node built-ins. Runs in browsers, Deno and Bun.
+- `ORDER_SPECS` and `REPORT_SPECS`: every spec version this package reads.
+- `awl new order` and `awl new report` print starter documents that validate together as printed (#7, thanks @brunnojob).
+- SPEC.md §13, Related work: Agent Contracts, A2A tasks, the IETF WIMSE cross-org delegation draft and KYA-OS / MCP-I.
+
+### Changed
+
+- The desk writes `awl/work-order@0.2` and `awl/work-report@0.2`. Documents marked `@0.1` are still accepted, so stored orders keep working.
+- Schemas and the version number are built into the code (`src/generated.ts`) instead of read from disk at startup.
 
 ## 0.1.1 — 2026-10-09
 

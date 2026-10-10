@@ -2,11 +2,9 @@ import { describe, test, after } from "node:test";
 import assert from "node:assert/strict";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import { WorkDesk } from "../src/index.ts";
-import { createDeskServer } from "../src/mcp.ts";
-import { LEAD, MANAGER, STRANGER, WORKER, orderInput, reportInput } from "./helpers.ts";
-
-const FAR = "2999-01-01T00:00:00Z";
+import { WorkDesk } from "agent-work-layer";
+import { createDeskServer } from "../src/index.ts";
+import { FAR, LEAD, MANAGER, STRANGER, WORKER, orderInput, reportInput } from "./helpers.ts";
 const clients: Client[] = [];
 after(() => Promise.all(clients.map((c) => c.close())));
 
@@ -142,5 +140,36 @@ describe("desk MCP server", () => {
     assert.equal((await manager("cancel_work_order", { id: b })).body.state, "cancelled");
     assert.equal((await manager("list_work_orders", { from: MANAGER, state: "cancelled" })).body.length, 1);
     assert.equal((await manager("list_work_orders", { from: STRANGER })).body.length, 0);
+  });
+});
+
+describe("handoff over MCP", () => {
+  const handoff = {
+    summary: "Parser done; export fails on files over 2 GB",
+    decisions: [{ text: "Stream rows", why: "Memory limit" }],
+    tried: [{ text: "xlsx library", result: "Too slow" }],
+    open_questions: ["Quote style for commas?"],
+    next_step: "Add tests for null cells",
+  };
+
+  test("a failed worker hands off and the next order carries it", async () => {
+    const { manager, worker } = await pair();
+    const first = (await manager("create_work_order", { ...orderInput() })).body.id;
+    await worker("accept_work_order", { id: first });
+    const failed = await worker("submit_work_report", { id: first, ...reportInput({ status: "failed", evidence: [], error: "Out of memory" }), handoff });
+    assert.ok(failed.ok, JSON.stringify(failed.body));
+
+    const left = (await manager("get_work_order", { id: first })).body.latest_report.handoff;
+    assert.deepEqual(left, handoff);
+
+    const next = await manager("create_work_order", { ...orderInput({ to: STRANGER }), handoff: left });
+    assert.ok(next.ok, JSON.stringify(next.body));
+    assert.deepEqual(next.body.order.handoff, handoff);
+  });
+
+  test("rejects unknown handoff fields", async () => {
+    const { manager } = await pair();
+    const r = await manager("create_work_order", { ...orderInput(), handoff: { notes: "x" } }).catch((e) => ({ ok: false, body: String(e) }));
+    assert.equal(r.ok, false);
   });
 });

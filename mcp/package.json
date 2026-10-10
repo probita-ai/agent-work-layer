@@ -1,0 +1,60 @@
+{
+  "name": "agent-work-layer-mcp",
+  "version": "0.2.0",
+  "description": "MCP server for Agent Work Layer: hand Work Orders between agent sessions and get checked Work Reports back.",
+  "keywords": [
+    "ai",
+    "agents",
+    "multi-agent",
+    "mcp",
+    "model-context-protocol",
+    "mcp-server",
+    "work-order",
+    "claude-code"
+  ],
+  "license": "Apache-2.0",
+  "author": "Probita",
+  "type": "module",
+  "engines": {
+    "node": ">=20.11"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "bin": {
+    "awl-desk": "dist/cli.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "build": "rm -rf dist && tsc -p tsconfig.build.json && chmod +x dist/cli.js",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "node --test \"test/**/*.test.ts\"",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.1",
+    "agent-work-layer": "^0.2.0",
+    "zod": "^3.25.76"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/probita-ai/agent-work-layer.git",
+    "directory": "mcp"
+  },
+  "homepage": "https://github.com/probita-ai/agent-work-layer/tree/main/mcp#readme",
+  "bugs": {
+    "url": "https://github.com/probita-ai/agent-work-layer/issues"
+  }
+}

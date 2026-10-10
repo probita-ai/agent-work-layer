@@ -21,7 +21,7 @@ Agent Cards say who an agent is. A2A carries messages between agents. MCP connec
 
 <p align="center"><img src="docs/fields.svg" alt="Each Work Report field answers a Work Order field: evidence proves criteria, cost stays within budget, tools used stay within allowed tools" width="760"></p>
 
-More diagrams: [message sequence](docs/sequence.svg) · [lifecycle](docs/lifecycle.svg) · [delegation](docs/delegation.svg)
+More diagrams: [message sequence](docs/sequence.svg) · [lifecycle](docs/lifecycle.svg) · [delegation](docs/delegation.svg) · [handoff](docs/handoff.svg)
 
 ## Install
 
@@ -91,6 +91,8 @@ The desk enforces the spec as you go:
 ### Hand off unfinished work
 
 When a worker fails, gets blocked or is cancelled, it can say what the next worker should know. The manager passes that along in the next order:
+
+<p align="center"><img src="docs/handoff.svg" alt="Worker A reports failed with a handoff; the manager reissues the job to Worker B with the same handoff: summary, decisions, what was tried, open questions and next step" width="760"></p>
 
 ```ts
 await desk.submitReport(order.id, {

@@ -79,6 +79,8 @@ const { record } = await desk.submitReport(
 await desk.review(order.id, "agent:manager", "approve");
 ```
 
+For a runnable version, clone the repo, run `npm install`, then run `node examples/two-agents.ts` (Node 22.18+). [examples/two-agents.ts](examples/two-agents.ts) walks one job through a rejected report, a rework request and approval, printing each event as it happens.
+
 The desk enforces the spec as you go:
 
 - Who may do what: only the worker reports, and only the manager approves.

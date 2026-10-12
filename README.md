@@ -234,7 +234,7 @@ class PostgresStore implements DeskStore {
 
 ## Production notes
 
-The desk trusts the `actor` it is given. In production, derive the actor from authentication, not from tool arguments. For real-time enforcement, check `tools` and `budget` at each tool call in an MCP gateway, not only when the report arrives. See [SPEC.md §10](SPEC.md#10-security).
+The desk trusts the `actor` it is given. In production, derive the actor from authentication, not from tool arguments. For real-time enforcement, run the MCP gateway (`npx -y agent-work-layer-mcp gateway`), which checks `tools` and `budget` at each tool call, not only when the report arrives. See [SPEC.md §9.1](SPEC.md#91-mcp-gateway) and [§10](SPEC.md#10-security).
 
 ## Development
 

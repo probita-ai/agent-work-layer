@@ -5,6 +5,9 @@ import { AwlError, STATES, summarize } from "agent-work-layer";
 import type { OrderRecord, State, WorkDesk, WorkOrderInput, WorkReportInput } from "agent-work-layer";
 import { VERSION } from "./version.ts";
 
+export { createGateway, USAGE_TOOL } from "./gateway.ts";
+export type { CallRecord, Gateway, GatewayOptions, RefusalCode, Usage } from "./gateway.ts";
+
 export interface DeskServerOptions {
   desk: WorkDesk;
   /**

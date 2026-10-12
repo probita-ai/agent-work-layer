@@ -1,6 +1,6 @@
 # Agent Work Layer (AWL) — Specification v0.2 (draft)
 
-Status: draft · Date: 2026-10-09 · Changes from v0.1: the optional `handoff` field (§4.4); readers accept both versions (§11); related work (§13).
+Status: draft · Date: 2026-10-09 · Changes from v0.1: the optional `handoff` field (§4.4); MCP gateway (§9.1); readers accept both versions (§11); related work (§13).
 
 ## 1. Purpose
 
@@ -213,10 +213,26 @@ How AWL documents travel. A desk MAY support several.
 - **MCP**: a desk exposed as an MCP server with tools such as `create_work_order`, `submit_work_report` and `review_work_report`. The reference implementation is the `agent-work-layer-mcp` package in this repo.
 - **A2A**: the document travels as a data part of an A2A message with the AWL media type. The A2A task id SHOULD be stored in `metadata.a2a_task_id`.
 
+### 9.1 MCP gateway
+
+A gateway is an MCP server that sits between one worker and its real MCP servers, for one order. It enforces the order while the worker works, instead of only checking the report afterwards (§10).
+
+1. It MUST refuse a call to a tool that no pattern in `tools` allows (§4.3), and SHOULD NOT list such tools.
+2. It MUST refuse calls once `budget.tool_calls` calls have reached a tool, and once `budget.seconds` have passed since the order was first started. It SHOULD stop a running call when the seconds run out.
+3. It MUST refuse calls while the order is not `working`. It MAY start an `accepted` order on its first call.
+4. Refused calls do not reach the tool and do not count against the budget. A call that reached the tool counts even if the tool returned an error.
+5. It numbers the calls that reach a tool 1, 2, 3… per order, across reworks, and names each `<server>/<tool>#<n>`. That name is the `ref` of `tool_call` evidence (§5.1), and the gateway SHOULD return it with the call's result.
+6. It SHOULD keep a log of every call, refused ones included, that survives a restart, so restarting the gateway does not reset the budget.
+7. The report's `tools_used` and its `cost.tool_calls` and `cost.seconds` SHOULD be taken from the gateway's log.
+
+A gateway MAY instead run in **observe** mode, for deployments whose own gateway or policy engine already controls access. It then applies rules 4–7 but not 1–3: it refuses nothing, and it SHOULD mark each logged call that rules 1–3 would have refused. Calls over budget or to tools the order does not allow still show up in the report, where checks R5 and R7 catch them.
+
+The gateway cannot measure `usd` or `tokens`; those are still checked when the report arrives (R7). The reference implementation is `awl-desk gateway` in `agent-work-layer-mcp`.
+
 ## 10. Security
 
 - A desk MUST bind `actor` to an authenticated identity in production. The reference desk trusts the `actor` argument and is for development only.
-- A worker's MCP gateway SHOULD enforce `tools` and `budget` at call time, not only after the report arrives.
+- A worker's MCP gateway SHOULD enforce `tools` and `budget` at call time, not only after the report arrives (§9.1).
 - Evidence `ref` values can point at sensitive data. Desks SHOULD apply the same access rules to evidence as to the data it points at.
 
 ## 11. Versioning

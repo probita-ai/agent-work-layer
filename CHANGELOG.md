@@ -1,11 +1,17 @@
 # Changelog
 
-## Unreleased
+## 0.4.0 — 2026-10-11
+
+Both packages: `agent-work-layer` 0.4.0 and `agent-work-layer-mcp` 0.4.0.
 
 ### Added
 
 - MCP gateway (#6): `awl-desk gateway --order <id> --config <file>` sits between a worker and its real MCP servers and enforces the order at every tool call. It lists only the tools the order allows, refuses the rest, refuses calls once `tool_calls` or `seconds` is spent or while the order is not `working`, and logs each call to `<store>/calls/<id>.jsonl` with an evidence ref `<server>/<tool>#<n>`. Its `awl_usage` tool returns `tools_used` and `cost` for the report. In code: `createGateway` from `agent-work-layer-mcp`. Enforcement is optional: `--observe` (`enforce: false`) refuses nothing and logs what the order would have refused, for setups whose own gateway already controls access.
 - SPEC.md §9.1: what an MCP gateway must enforce.
+
+### Changed
+
+- `agent-work-layer-mcp` now depends on `agent-work-layer` ^0.4.0.
 
 ## 0.3.0 — 2026-10-10
 

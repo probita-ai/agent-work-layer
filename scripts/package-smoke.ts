@@ -104,12 +104,17 @@ script(
   `
 import assert from "node:assert/strict";
 import { WorkDesk } from "agent-work-layer";
-import { createDeskServer } from "agent-work-layer-mcp";
+import { createDeskServer, createGateway } from "agent-work-layer-mcp";
 assert.equal(typeof createDeskServer({ desk: new WorkDesk(), actor: "m" }).connect, "function");
+const desk = new WorkDesk();
+const { order } = await desk.create({ to: "w", goal: "g", criteria: [{ id: "c1", text: "t" }], budget: { tool_calls: 1 }, deadline: "2999-01-01T00:00:00Z", tools: [] }, "m");
+assert.equal(typeof (await createGateway({ desk, orderId: order.id, upstreams: {} })).server.connect, "function");
 console.log("ok");
 `,
 );
-if (run(join(withMcp.app, "node_modules", ".bin", "awl-desk"), ["--version"], withMcp.app).trim() !== mcpPkg.version) fail("awl-desk --version does not match");
+const awlDesk = join(withMcp.app, "node_modules", ".bin", "awl-desk");
+if (run(awlDesk, ["--version"], withMcp.app).trim() !== mcpPkg.version) fail("awl-desk --version does not match");
+if (!run(awlDesk, ["gateway", "--help"], withMcp.app).includes("mcpServers")) fail("awl-desk gateway --help failed");
 
 console.log(`core ok: ${core.summary}; installs ${alone.installed} packages`);
 console.log(`mcp  ok: ${mcp.summary}; installs ${withMcp.installed} packages with the core`);

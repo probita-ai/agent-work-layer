@@ -2,9 +2,12 @@
 
 AWL is at v0.1. The goal is a small format that many agent frameworks can share. Items marked **help wanted** are good places to start.
 
+## Done
+
+- **MCP gateway** — `awl-desk gateway` enforces an order's `tools` and `budget` at every tool call and logs each call as evidence (SPEC.md §9.1).
+
 ## Next (v0.2)
 
-- **MCP gateway** — a proxy in front of a worker's MCP servers that enforces an order's `tools` and `budget` at every tool call and records evidence automatically. *help wanted*
 - **Delegation Pass** — a signed, standalone grant of budget, tools and time, so authority can be checked without the desk.
 - **Progress events** — optional streaming updates while an order is `working`.
 - **A2A binding** — carry orders and reports as A2A message parts, with an example. *help wanted*

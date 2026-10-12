@@ -50,6 +50,40 @@ Flags win over the environment. Installed locally, the command is `awl-desk`.
 
 When a worker fails or gets stuck, it can fill in `handoff` (decisions, what it tried, open questions, next step). The manager passes that to the next worker in a new order, so the next worker doesn't start from nothing. See [SPEC.md §4.4](https://github.com/probita-ai/agent-work-layer/blob/main/SPEC.md#44-handoff).
 
+## Gateway: enforce an order while the worker works
+
+The desk checks `tools` and `budget` when the report arrives. The gateway enforces them at every tool call. It sits between the worker and its real MCP servers, for one order:
+
+```sh
+claude mcp add work -e AWL_STORE="$HOME/.awl" -- npx -y agent-work-layer-mcp gateway --order wo_123 --config upstream.json
+```
+
+`upstream.json` lists the real servers, in the same shape as `.mcp.json`:
+
+```json
+{ "mcpServers": {
+    "filings": { "command": "npx", "args": ["-y", "filings-mcp"] },
+    "calc": { "url": "https://calc.example.com/mcp" } } }
+```
+
+- Tools appear as `<server>__<tool>`, and only those the order's `tools` allow. Calls to others are refused.
+- Calls are refused once `budget.tool_calls` or `budget.seconds` is spent, and while the order is not `working`. An `accepted` order is started on its first call.
+- Each result ends with an evidence ref such as `filings/search#3`. Cite it as `{ "type": "tool_call", "ref": "filings/search#3" }`.
+- `awl_usage` returns `tools_used` and `cost` to copy into `submit_work_report`, and every call so far.
+- Calls are logged to `<store>/calls/<id>.jsonl`. The log is reloaded on restart, so restarting does not reset the budget.
+
+| Flag | Environment | Default | Meaning |
+|---|---|---|---|
+| `--order <id>` | | required | The order to enforce |
+| `--config <file>` | | required | The real MCP servers |
+| `--store <dir>` | `AWL_STORE` | `./.awl` | The desk's folder; the call log goes in `calls/` |
+| `--actor <ref>` | `AWL_ACTOR` | the order's worker | Must be the order's worker |
+| `--observe` | | off | Log only, refuse nothing (see below) |
+
+**Already enforce access with your own gateway or policy engine?** Run with `--observe` (in code, `enforce: false`). The gateway then lists every tool and refuses nothing. It still numbers and logs every call and reports usage. Calls the order would have refused are logged with a `violation` (`TOOL_NOT_ALLOWED`, `BUDGET_SPENT` or `ORDER_NOT_WORKING`), and the desk still catches them in the report (R5, R7).
+
+The gateway cannot measure `usd` or `tokens`; the desk still checks those when the report arrives. See [SPEC.md §9.1](https://github.com/probita-ai/agent-work-layer/blob/main/SPEC.md#91-mcp-gateway).
+
 ## Embed the server
 
 ```ts
@@ -58,6 +92,15 @@ import { createDeskServer } from "agent-work-layer-mcp";
 
 const server = createDeskServer({ desk: new WorkDesk({ store: new FileStore("./.awl") }), actor: "agent:manager" });
 await server.connect(transport); // any MCP transport
+```
+
+The gateway takes connected MCP clients for the real servers:
+
+```ts
+import { createGateway } from "agent-work-layer-mcp";
+
+const { server, usage } = await createGateway({ desk, orderId: "wo_123", upstreams: { filings: filingsClient }, logFile: "./calls.jsonl" });
+await server.connect(transport);
 ```
 
 ## Upgrading from agent-work-layer 0.1

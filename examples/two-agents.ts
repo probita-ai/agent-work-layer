@@ -25,7 +25,7 @@ const { order } = await desk.create(
     to: WORKER,
     goal: "Summarize the main credit risk factors for Example Corp from its latest annual report",
     criteria: [
-      { id: "c1", text: "Lists three risk factors, each quoted from the filing" },
+      { id: "c1", text: "Names three risk factors from the filing" },
       { id: "c2", text: "States total debt and its fiscal year" },
     ],
     budget: { usd: 2, tool_calls: 20 },

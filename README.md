@@ -4,6 +4,7 @@
 
 [![npm](https://img.shields.io/npm/v/agent-work-layer.svg)](https://www.npmjs.com/package/agent-work-layer)
 [![license](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+[![M8ven Score](https://m8ven.ai/badge/mcp/probita-ai-agent-work-layer-0vyqyi?v=1b5d39882e3a71ebeecc28d9d2f02ec3)](https://m8ven.ai/mcp/probita-ai-agent-work-layer-0vyqyi?s=readme)
 
 - **Work Order** (manager → worker): the goal, how "done" is judged, budget, deadline, allowed tools.
 - **Work Report** (worker → manager): the result, evidence for each criterion, actual cost, tools used.

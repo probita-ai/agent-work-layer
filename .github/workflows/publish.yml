@@ -14,9 +14,10 @@ jobs:
   npm:
     if: startsWith(github.event.release.tag_name, 'v')
     runs-on: ubuntu-latest
+    # npm trusted publishing: npmjs.com trusts this repo and workflow for both packages. No token.
     permissions:
       contents: read
-      id-token: write # npm provenance
+      id-token: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -25,13 +26,19 @@ jobs:
           registry-url: https://registry.npmjs.org
       - run: npm ci
       - run: npm run check
-      # The core first: agent-work-layer-mcp depends on the version being released.
-      - run: npm publish --workspace agent-work-layer --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-      - run: npm publish --workspace agent-work-layer-mcp --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      # The core first: agent-work-layer-mcp depends on it. A patch release may bump only one
+      # package, so a version that is already on npm is skipped instead of failing the release.
+      - name: Publish the packages whose version is not on npm yet
+        run: |
+          for pkg in core:agent-work-layer mcp:agent-work-layer-mcp; do
+            dir=${pkg%%:*}; name=${pkg#*:}
+            version=$(node -p "require('./packages/$dir/package.json').version")
+            if [ -n "$(npm view "$name@$version" version 2>/dev/null)" ]; then
+              echo "$name@$version is already on npm"
+            else
+              npm publish --workspace "$name" --provenance --access public
+            fi
+          done
 
   pypi:
     if: startsWith(github.event.release.tag_name, 'python-v')

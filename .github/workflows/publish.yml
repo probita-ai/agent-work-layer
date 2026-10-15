@@ -36,7 +36,8 @@ jobs:
             if [ -n "$(npm view "$name@$version" version 2>/dev/null)" ]; then
               echo "$name@$version is already on npm"
             else
-              npm publish --workspace "$name" --provenance --access public
+              # Verbose so a refused trusted-publishing exchange logs npm's reason ("oidc" lines).
+              npm publish --workspace "$name" --provenance --access public --loglevel verbose
             fi
           done
 

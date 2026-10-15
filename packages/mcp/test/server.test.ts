@@ -40,6 +40,26 @@ describe("desk MCP server", () => {
     ]);
   });
 
+  test("declares all four hints on every tool", async () => {
+    const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
+    await createDeskServer({ desk: new WorkDesk() }).connect(serverSide);
+    const client = new Client({ name: "t", version: "0" });
+    await client.connect(clientSide);
+    clients.push(client);
+    const hints = Object.fromEntries((await client.listTools()).tools.map((t) => [t.name, t.annotations]));
+    for (const [name, a] of Object.entries(hints)) {
+      for (const key of ["readOnlyHint", "destructiveHint", "idempotentHint", "openWorldHint"] as const) {
+        assert.equal(typeof a?.[key], "boolean", `${name} is missing ${key}`);
+      }
+      assert.equal(a!.openWorldHint, false, name);
+    }
+    const readOnly = Object.keys(hints).filter((n) => hints[n]!.readOnlyHint).sort();
+    assert.deepEqual(readOnly, ["get_work_order", "list_work_orders", "wait_for_update"]);
+    const destructive = Object.keys(hints).filter((n) => hints[n]!.destructiveHint).sort();
+    assert.deepEqual(destructive, ["cancel_work_order", "decline_work_order"]);
+    assert.equal(hints.create_work_order!.idempotentHint, false);
+  });
+
   test("runs a full job between two sessions", async () => {
     const { manager, worker } = await pair();
     const created = await manager("create_work_order", { ...orderInput({ deadline: FAR }) });

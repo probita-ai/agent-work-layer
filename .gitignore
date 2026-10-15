@@ -10,3 +10,9 @@ packages/core/SPEC.md
 packages/core/CHANGELOG.md
 packages/core/schemas/
 packages/mcp/LICENSE
+
+# Python
+python/.venv/
+__pycache__/
+*.egg-info/
+.pytest_cache/

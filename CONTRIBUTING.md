@@ -40,6 +40,16 @@ npm run generate       # after editing schemas/*.json; a test fails if you forge
 
 The MCP package imports the core by its package name, the way users do, so its tests run against the built core. `npm test` and `npm run typecheck` build the core first.
 
+The Python package lives in `python/`. It needs Python 3.9 or later:
+
+```sh
+cd python
+python -m venv .venv && .venv/bin/pip install -e ".[test]"
+.venv/bin/pytest
+```
+
+A rule change goes into both implementations, with the same rule ids, kinds and paths. After editing `schemas/*.json`, copy them into `python/src/agent_work_layer/schemas/`; a test fails if you forget.
+
 Guidelines:
 
 - Every behavior change comes with a test. Validation rules get a passing case and a failing case.
@@ -55,4 +65,6 @@ Guidelines:
 
 ## Releases
 
-Minor and major releases bump both packages to the same version; a patch may cover only the package it fixes. Maintainers bump the version in `packages/core/package.json` and `packages/mcp/package.json` (including the MCP package's dependency on the core), run `npm run generate`, and move the CHANGELOG entries under the new version. Then run `npm run check` and publish the core before the MCP package: `npm publish -w agent-work-layer`, then `npm publish -w agent-work-layer-mcp`. A GitHub release runs the same steps in the publish workflow when the repository has an `NPM_TOKEN` secret.
+Minor and major releases bump both packages to the same version; a patch may cover only the package it fixes. Maintainers bump the version in `packages/core/package.json` and `packages/mcp/package.json` (including the MCP package's dependency on the core), run `npm run generate`, and move the CHANGELOG entries under the new version. Then run `npm run check` and publish the core before the MCP package: `npm publish -w agent-work-layer`, then `npm publish -w agent-work-layer-mcp`. A GitHub release tagged `vX.Y.Z` runs the same steps in the publish workflow when the repository has an `NPM_TOKEN` secret.
+
+The Python package has its own version and its own releases. Bump `version` in `python/pyproject.toml` and `__version__` in `python/src/agent_work_layer/__init__.py`, update the CHANGELOG, and publish a GitHub release tagged `python-vX.Y.Z`. The publish workflow checks that the tag and both versions agree, runs the tests and uploads to PyPI through trusted publishing (environment `pypi`). A `python-v` release never publishes to npm, and a `v` release never publishes to PyPI.

@@ -32,9 +32,10 @@ Install only the part you use:
 |---|---|---|
 | Validate orders and reports, or run a desk in your code | `npm install agent-work-layer` | 7 |
 | Validate in a browser, Deno or Bun | `npm install agent-work-layer`, then import `agent-work-layer/validate` | 7 |
+| Validate orders and reports in Python | `pip install agent-work-layer` ([python/](python/)) | 11 |
 | Connect agent sessions (e.g. Claude Code) through MCP | `npx -y agent-work-layer-mcp` ([setup](#run-as-an-mcp-server)) | ~100 |
 
-Node.js 20.11 or later. ESM only. Types included.
+Node.js 20.11 or later. ESM only. Types included. The Python package needs Python 3.9 or later.
 
 ## Quick start
 
@@ -251,6 +252,14 @@ npm run typecheck
 npm run test:package   # packs both packages, installs them in clean projects and uses them
 npm run check          # all of the above; runs automatically before npm publish
 npm run generate       # after editing schemas/*.json: refreshes packages/core/src/generated.ts
+```
+
+The Python package in [`python/`](python/) is separate from the npm workspace:
+
+```sh
+cd python
+python -m venv .venv && .venv/bin/pip install -e ".[test]"
+.venv/bin/pytest
 ```
 
 ## Contributing

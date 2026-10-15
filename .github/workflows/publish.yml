@@ -1,16 +1,22 @@
 name: Publish
 
+# One workflow per registry, picked by the release tag:
+#   v1.2.3         → the npm packages (agent-work-layer, agent-work-layer-mcp)
+#   python-v1.2.3  → the Python package on PyPI (agent-work-layer)
 on:
   release:
     types: [published]
 
 permissions:
   contents: read
-  id-token: write # npm provenance
 
 jobs:
-  publish:
+  npm:
+    if: startsWith(github.event.release.tag_name, 'v')
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # npm provenance
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -26,3 +32,36 @@ jobs:
       - run: npm publish --workspace agent-work-layer-mcp --provenance --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  pypi:
+    if: startsWith(github.event.release.tag_name, 'python-v')
+    runs-on: ubuntu-latest
+    # PyPI trusted publishing: pypi.org trusts this repo, workflow and environment. No token.
+    environment: pypi
+    permissions:
+      contents: read
+      id-token: write
+    defaults:
+      run:
+        working-directory: python
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Tag matches the package version
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          version=$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')
+          module=$(sed -n 's/^__version__ = "\(.*\)"$/\1/p' src/agent_work_layer/__init__.py)
+          if [ "python-v$version" != "$TAG" ] || [ "$module" != "$version" ]; then
+            echo "tag $TAG, pyproject.toml $version, __version__ $module: they must agree" >&2
+            exit 1
+          fi
+      - run: pip install -e ".[test]" build
+      - run: pytest
+      - run: python -m build
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: python/dist

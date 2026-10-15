@@ -4,8 +4,15 @@
 
 ### Added
 
-- Python package `agent-work-layer` 0.1.0 in `python/` (#5): Pydantic models for Work Orders and Work Reports, and `validate_order`, `validate_report` and `validate_child_order` with the same rule ids, kinds and paths as the TypeScript SDK.
 - `agent-work-layer-mcp`: every desk tool and the gateway's `awl_usage` tool declare `readOnlyHint`, `destructiveHint`, `idempotentHint` and `openWorldHint`, so hosts can warn before a tool runs and directories that require the hints accept the server.
+
+## python 0.1.0 — 2026-10-14
+
+First release of the Python package `agent-work-layer` on PyPI (`pip install agent-work-layer`).
+
+### Added
+
+- Pydantic models for Work Orders and Work Reports, and `validate_order`, `validate_report` and `validate_child_order` with the same rule ids, kinds and paths as the TypeScript SDK (#5).
 
 ## 0.4.0 — 2026-10-11
 

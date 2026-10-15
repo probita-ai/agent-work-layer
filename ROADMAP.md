@@ -14,7 +14,7 @@ AWL is at v0.1. The goal is a small format that many agent frameworks can share.
 
 ## Implementations
 
-- Python SDK with the same validation rules and a shared test-vector suite. *help wanted*
+- Python SDK: models and validation are in [`python/`](python/). The desk and an MCP server in Python. *help wanted*
 - Database stores: PostgreSQL, SQLite, Redis. *help wanted*
 - Shared conformance test vectors (JSON files of documents with their expected findings) so every implementation can prove it matches the spec.
 

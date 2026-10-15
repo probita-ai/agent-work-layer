@@ -40,6 +40,16 @@ npm run generate       # after editing schemas/*.json; a test fails if you forge
 
 The MCP package imports the core by its package name, the way users do, so its tests run against the built core. `npm test` and `npm run typecheck` build the core first.
 
+The Python package lives in `python/`. It needs Python 3.9 or later:
+
+```sh
+cd python
+python -m venv .venv && .venv/bin/pip install -e ".[test]"
+.venv/bin/pytest
+```
+
+A rule change goes into both implementations, with the same rule ids, kinds and paths. After editing `schemas/*.json`, copy them into `python/src/agent_work_layer/schemas/`; a test fails if you forget.
+
 Guidelines:
 
 - Every behavior change comes with a test. Validation rules get a passing case and a failing case.

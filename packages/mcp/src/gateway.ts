@@ -196,6 +196,7 @@ export async function createGateway(options: GatewayOptions): Promise<Gateway> {
           `Tool calls and time spent on order "${orderId}" so far, with each call's evidence ref. ` +
           "Copy tools_used and cost into your work report, and cite refs as tool_call evidence.",
         inputSchema: { type: "object", properties: {} },
+        annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
       },
     ],
   }));

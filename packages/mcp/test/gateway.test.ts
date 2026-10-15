@@ -58,6 +58,12 @@ describe("MCP gateway", () => {
     assert.deepEqual(names, [USAGE_TOOL, "calc__ratio", "filings__broken", "filings__get_section", "filings__search"]);
   });
 
+  test("marks awl_usage as a read-only tool", async () => {
+    const { client } = await setup();
+    const usage = (await client.listTools()).tools.find((t) => t.name === USAGE_TOOL);
+    assert.deepEqual(usage?.annotations, { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false });
+  });
+
   test("passes allowed calls through and tags each with an evidence ref", async () => {
     const { call, arrived } = await setup();
     const r = await call("filings__search", { q: "risk" });

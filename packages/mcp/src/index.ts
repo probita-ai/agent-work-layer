@@ -38,6 +38,15 @@ const handoff = z
 const actorArg = z.string().optional().describe("Who is acting. Omit to use this session's identity.");
 const idArg = z.string().describe("Work order id");
 
+// Tool hints for hosts. The desk is a closed store, so no tool reaches an open world. Every
+// lifecycle action is guarded by the order's state: repeating one with the same arguments
+// fails or changes nothing, so only create (a new order per call) is not idempotent.
+const READ = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
+const MOVE = { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false };
+/** Ends the order for good. */
+const END = { ...MOVE, destructiveHint: true };
+const CREATE = { ...MOVE, idempotentHint: false };
+
 const view = (r: OrderRecord) => ({ ...summarize(r), order: r.order, latest_report: r.reports.at(-1) ?? null, findings: r.findings, events: r.events });
 
 /** Drops keys whose value is undefined so they don't reach JSON Schema validation. */
@@ -67,6 +76,7 @@ export function createDeskServer({ desk, actor: sessionActor, name = "awl-work-d
   server.registerTool(
     "create_work_order",
     {
+      annotations: CREATE,
       description:
         "Issue a Work Order to a worker agent. Every criterion must be provable with evidence. " +
         "Set parent_id to split your own order into a sub-order; it may only narrow budget, tools and deadline.",
@@ -94,6 +104,7 @@ export function createDeskServer({ desk, actor: sessionActor, name = "awl-work-d
   server.registerTool(
     "list_work_orders",
     {
+      annotations: READ,
       description: "List work orders. Workers: filter by to=<yourself> and state=offered to find new jobs.",
       inputSchema: {
         to: z.string().optional(),
@@ -107,31 +118,32 @@ export function createDeskServer({ desk, actor: sessionActor, name = "awl-work-d
 
   server.registerTool(
     "get_work_order",
-    { description: "Full order, current state, latest report, check findings and event log.", inputSchema: { id: idArg } },
+    { annotations: READ, description: "Full order, current state, latest report, check findings and event log.", inputSchema: { id: idArg } },
     async ({ id }) => respond(async () => view(await desk.get(id))),
   );
 
   server.registerTool(
     "accept_work_order",
-    { description: "Worker accepts an offered order.", inputSchema: { id: idArg, actor: actorArg } },
+    { annotations: MOVE, description: "Worker accepts an offered order.", inputSchema: { id: idArg, actor: actorArg } },
     async ({ id, actor }) => respond(async () => view(await desk.accept(id, who(actor)))),
   );
 
   server.registerTool(
     "decline_work_order",
-    { description: "Worker declines an offered order.", inputSchema: { id: idArg, actor: actorArg, reason: z.string().optional() } },
+    { annotations: END, description: "Worker declines an offered order.", inputSchema: { id: idArg, actor: actorArg, reason: z.string().optional() } },
     async ({ id, actor, reason }) => respond(async () => view(await desk.decline(id, who(actor), reason))),
   );
 
   server.registerTool(
     "start_work_order",
-    { description: "Worker starts an accepted order.", inputSchema: { id: idArg, actor: actorArg } },
+    { annotations: MOVE, description: "Worker starts an accepted order.", inputSchema: { id: idArg, actor: actorArg } },
     async ({ id, actor }) => respond(async () => view(await desk.start(id, who(actor)))),
   );
 
   server.registerTool(
     "submit_work_report",
     {
+      annotations: MOVE,
       description:
         "Worker reports on an order. done needs evidence for every criterion; blocked needs questions; failed needs error. " +
         "A rejected report returns the failed checks so you can fix it and resubmit.",
@@ -171,13 +183,14 @@ export function createDeskServer({ desk, actor: sessionActor, name = "awl-work-d
 
   server.registerTool(
     "answer_question",
-    { description: "Manager or escalation contact answers a blocked worker; the order returns to working.", inputSchema: { id: idArg, actor: actorArg, answer: z.string() } },
+    { annotations: MOVE, description: "Manager or escalation contact answers a blocked worker; the order returns to working.", inputSchema: { id: idArg, actor: actorArg, answer: z.string() } },
     async ({ id, actor, answer }) => respond(async () => view(await desk.answer(id, who(actor), answer))),
   );
 
   server.registerTool(
     "review_work_report",
     {
+      annotations: MOVE,
       description: "Manager approves a submitted report, or sends it back for rework with a reason.",
       inputSchema: { id: idArg, actor: actorArg, decision: z.enum(["approve", "rework"]), reason: z.string().optional() },
     },
@@ -186,13 +199,14 @@ export function createDeskServer({ desk, actor: sessionActor, name = "awl-work-d
 
   server.registerTool(
     "cancel_work_order",
-    { description: "Manager cancels an order that is not finished.", inputSchema: { id: idArg, actor: actorArg, reason: z.string().optional() } },
+    { annotations: END, description: "Manager cancels an order that is not finished.", inputSchema: { id: idArg, actor: actorArg, reason: z.string().optional() } },
     async ({ id, actor, reason }) => respond(async () => view(await desk.cancel(id, who(actor), reason))),
   );
 
   server.registerTool(
     "wait_for_update",
     {
+      annotations: READ,
       description: "Wait until the order changes after since_seq (up to timeout_s seconds). Use it to follow a job live.",
       inputSchema: { id: idArg, since_seq: z.number().int().min(0), timeout_s: z.number().min(1).max(55).optional() },
     },

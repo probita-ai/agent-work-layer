@@ -1,10 +1,12 @@
 # Changelog
 
-## Unreleased
+## 0.4.1 — 2026-10-14
+
+`agent-work-layer-mcp` alone (`agent-work-layer` stays at 0.4.0).
 
 ### Added
 
-- `agent-work-layer-mcp`: every desk tool and the gateway's `awl_usage` tool declare `readOnlyHint`, `destructiveHint`, `idempotentHint` and `openWorldHint`, so hosts can warn before a tool runs and directories that require the hints accept the server.
+- Every desk tool and the gateway's `awl_usage` tool declare `readOnlyHint`, `destructiveHint`, `idempotentHint` and `openWorldHint`, so hosts can warn before a tool runs and directories that require the hints accept the server.
 
 ## python 0.1.0 — 2026-10-14
 

@@ -1,0 +1,107 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 792 510" width="792" height="510" role="img" aria-label="Authenticated actor. Today each agent runs its own desk over a shared folder and declares its own actor, so a worker can act as the manager. With the change, agents send a credential to one desk over HTTP; an authenticate hook maps it to an agent reference, the role check uses that, and a spoofed actor argument is refused.">
+<style>
+svg{--bg:#f4f5f8;--surface:#ffffff;--fg:#171b24;--muted:#5a6376;--line:#c8cdd8;--accent:#2b57c4;--new:#c97a06;--new-bg:#fff4df;--ok:#1d8a59;--stop:#b8402f;
+--sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;--mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+@media (prefers-color-scheme: dark){svg{--bg:#0f1218;--surface:#171b24;--fg:#e6e9f0;--muted:#98a1b3;--line:#353c4a;--accent:#84a6ff;--new:#f0a83c;--new-bg:#2b2214;--ok:#4fc58c;--stop:#ef7a68}}
+.frame{fill:var(--bg)}
+
+.bx { fill: var(--surface); stroke: var(--line); stroke-width: 1.3; }
+.bx-new { fill: var(--new-bg); stroke: var(--new); stroke-width: 1.8; }
+.bx-ok { fill: var(--surface); stroke: var(--ok); stroke-width: 2; }
+.bx-end { fill: var(--bg); stroke: var(--muted); stroke-width: 1.2; stroke-dasharray: 4 3; }
+.bx-hdr { fill: var(--new-bg); stroke: none; }
+.ln { stroke: var(--muted); stroke-width: 1.5; fill: none; }
+.ln-d { stroke: var(--muted); stroke-width: 1.3; fill: none; stroke-dasharray: 5 4; }
+.ln-new { stroke: var(--new); stroke-width: 2.4; fill: none; }
+.ln-new-d { stroke: var(--new); stroke-width: 1.8; fill: none; stroke-dasharray: 5 4; }
+.ln-acc { stroke: var(--accent); stroke-width: 1.8; fill: none; }
+.ln-acc-d { stroke: var(--accent); stroke-width: 1.5; fill: none; stroke-dasharray: 5 4; }
+.ln-stop { stroke: var(--stop); stroke-width: 1.6; fill: none; stroke-dasharray: 5 4; }
+.life { stroke: var(--line); stroke-width: 1.2; stroke-dasharray: 3 4; }
+.sep { stroke: var(--line); stroke-width: 1; }
+.mk-g { fill: var(--muted); } .mk-n { fill: var(--new); } .mk-a { fill: var(--accent); } .mk-s { fill: var(--stop); }
+.dot { fill: var(--fg); }
+.t { fill: var(--fg); font: 13px var(--sans); }
+.tb { font-weight: 600; }
+.ts { fill: var(--muted); font: 12px var(--sans); }
+.tm { fill: var(--muted); font: 500 11px var(--mono); letter-spacing: .06em; }
+.tf { fill: var(--fg); font: 12.5px var(--mono); }
+.t-new { fill: var(--new); } .t-acc { fill: var(--accent); } .t-ok { fill: var(--ok); } .t-stop { fill: var(--stop); }
+.bar-bg { fill: var(--line); } .bar { fill: var(--new); }
+.loop { fill: none; stroke: var(--accent); stroke-width: 1.2; stroke-dasharray: 3 3; }
+</style>
+<defs>
+    <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk-g"/></marker>
+    <marker id="ahn" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk-n"/></marker>
+    <marker id="aha" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk-a"/></marker>
+    <marker id="ahs" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk-s"/></marker>
+  </defs>
+<rect class="frame" x="0" y="0" width="792" height="510" rx="12"/>
+<g transform="translate(16,16)">
+  <text class="tm" x="0" y="14">TODAY · EACH AGENT RUNS ITS OWN DESK AND NAMES ITS OWN ACTOR</text>
+
+  <rect class="bx" x="0" y="34" width="170" height="46" rx="8"/>
+  <text class="tm" x="85" y="54" text-anchor="middle">MANAGER AGENT</text>
+  <text class="ts" x="85" y="71" text-anchor="middle">agent:manager</text>
+  <line class="ln" x1="172" y1="57" x2="226" y2="57" marker-end="url(#ah)"/>
+  <text class="ts" x="199" y="50" text-anchor="middle">stdio</text>
+  <rect class="bx" x="228" y="34" width="300" height="46" rx="8"/>
+  <text class="tf" x="378" y="62" text-anchor="middle">awl-desk --actor agent:manager</text>
+  <line class="ln" x1="530" y1="57" x2="588" y2="80" marker-end="url(#ah)"/>
+
+  <rect class="bx" x="0" y="98" width="170" height="46" rx="8"/>
+  <text class="tm" x="85" y="118" text-anchor="middle">WORKER AGENT</text>
+  <text class="ts" x="85" y="135" text-anchor="middle">agent:worker</text>
+  <line class="ln" x1="172" y1="121" x2="226" y2="121" marker-end="url(#ah)"/>
+  <text class="ts" x="199" y="114" text-anchor="middle">stdio</text>
+  <rect class="bx" x="228" y="98" width="300" height="46" rx="8" style="stroke:var(--stop);stroke-width:1.8"/>
+  <text class="tf" x="378" y="126" text-anchor="middle">awl-desk --actor <tspan class="t-stop tb">agent:manager</tspan></text>
+  <line class="ln" x1="530" y1="121" x2="588" y2="98" marker-end="url(#ah)"/>
+
+  <rect class="bx" x="590" y="52" width="170" height="74" rx="8"/>
+  <text class="tm" x="675" y="80" text-anchor="middle">SHARED FOLDER</text>
+  <text class="tf" x="675" y="102" text-anchor="middle">.awl/</text>
+
+  <text class="ts t-stop tb" x="0" y="172">Nothing checks --actor: the worker can act as the manager and approve its own report.</text>
+
+  <line class="sep" x1="0" y1="194" x2="760" y2="194"/>
+
+  <text class="tm t-new" x="0" y="222">WITH #16 · ONE DESK OVER HTTP · ACTOR COMES FROM THE CREDENTIAL</text>
+
+  <rect class="bx" x="0" y="246" width="200" height="50" rx="8"/>
+  <text class="tm" x="100" y="266" text-anchor="middle">MANAGER AGENT</text>
+  <text class="ts" x="100" y="284" text-anchor="middle">sends credential A</text>
+  <line class="ln" x1="202" y1="271" x2="296" y2="294" marker-end="url(#ah)"/>
+
+  <rect class="bx" x="0" y="310" width="200" height="50" rx="8"/>
+  <text class="tm" x="100" y="330" text-anchor="middle">WORKER AGENT</text>
+  <text class="ts" x="100" y="348" text-anchor="middle">sends credential B</text>
+  <line class="ln" x1="202" y1="335" x2="296" y2="312" marker-end="url(#ah)"/>
+  <text class="ts" x="249" y="250" text-anchor="middle">HTTPS +</text>
+  <text class="ts" x="249" y="265" text-anchor="middle">credential</text>
+
+  <rect class="bx" x="0" y="374" width="200" height="50" rx="8" style="stroke:var(--stop);stroke-width:1.8"/>
+  <text class="tm" x="100" y="394" text-anchor="middle">WORKER AGENT</text>
+  <text class="ts" x="100" y="412" text-anchor="middle">credential B + actor: <tspan class="t-stop tb">manager</tspan></text>
+  <line class="ln-stop" x1="202" y1="399" x2="296" y2="399" marker-end="url(#ahs)"/>
+  <text class="ts t-stop tb" x="249" y="392" text-anchor="middle">FORBIDDEN</text>
+
+  <rect class="bx" x="298" y="240" width="270" height="196" rx="8"/>
+  <text class="tm" x="433" y="262" text-anchor="middle">AWL DESK · MCP OVER HTTP</text>
+  <rect class="bx-new" x="314" y="276" width="238" height="58" rx="6"/>
+  <text class="tf t-new tb" x="433" y="300" text-anchor="middle">authenticate(request)</text>
+  <text class="ts" x="433" y="320" text-anchor="middle">→ agent ref, or 401 if unknown</text>
+  <line class="ln" x1="433" y1="336" x2="433" y2="358" marker-end="url(#ah)"/>
+  <rect class="bx" x="314" y="360" width="238" height="60" rx="6"/>
+  <text class="t tb" x="433" y="384" text-anchor="middle">role check</text>
+  <text class="ts" x="433" y="404" text-anchor="middle">from · to · escalate_to</text>
+
+  <line class="ln" x1="570" y1="338" x2="618" y2="338" marker-end="url(#ah)"/>
+  <rect class="bx" x="620" y="310" width="140" height="56" rx="8"/>
+  <text class="tm" x="690" y="333" text-anchor="middle">STORE</text>
+  <text class="ts" x="690" y="352" text-anchor="middle">orders · events</text>
+
+  <text class="ts" x="0" y="464">The credential is whatever you already use: an OAuth 2.1 bearer token, an API key, mTLS.</text>
+  <text class="ts" x="0" y="482">The desk only maps it to an agent ref. An actor argument naming anyone else is refused.</text>
+</g>
+</svg>

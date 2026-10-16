@@ -240,6 +240,22 @@ class PostgresStore implements DeskStore {
 
 The desk trusts the `actor` it is given. In production, derive the actor from authentication, not from tool arguments. For real-time enforcement, run the MCP gateway (`npx -y agent-work-layer-mcp gateway`), which checks `tools` and `budget` at each tool call, not only when the report arrives. See [SPEC.md §9.1](SPEC.md#91-mcp-gateway) and [§10](SPEC.md#10-security).
 
+## Planned: authentication and the Delegation Pass
+
+Not built yet. These two changes close the gap described above, and contributions are welcome.
+
+### Authenticated actor ([#16](https://github.com/probita-ai/agent-work-layer/issues/16))
+
+Today each agent runs its own desk and declares its own `actor`, so a worker can act as its manager. The plan is one desk over HTTP that takes the actor from the request's credential, through a pluggable `authenticate(request)` hook. Teams plug in what they already use: OAuth 2.1 bearer tokens, API keys or mTLS. An `actor` argument naming anyone else is refused.
+
+<p align="center"><img src="docs/authenticated-actor.svg" alt="Today, a worker starts its own desk with --actor agent:manager and can approve its own report. Planned: agents send a credential to one desk over HTTP, authenticate(request) maps it to an agent ref before the role check, and a spoofed actor argument is refused" width="760"></p>
+
+### Delegation Pass ([#17](https://github.com/probita-ai/agent-work-layer/issues/17))
+
+When a worker starts, the desk signs a short-lived pass (a JWS) carrying the order's tools, budget and deadline. The worker presents it with each tool call, and a gateway or another team's system verifies it on its own, without calling the desk. A sub-order gets a narrower pass that names its parent, so the delegation rules (C1–C3) can be checked offline.
+
+<p align="center"><img src="docs/delegation-pass.svg" alt="The desk signs a pass when the worker starts; the gateway verifies it on each tool call, allowing filings/search and refusing web/browse; a sub-order gets a narrower pass naming its parent. Below, the claims in a pass: iss, sub, awl_order, awl_tools, awl_budget, awl_parent, iat, exp, jti" width="760"></p>
+
 ## Development
 
 The repo is an npm workspace with two packages: the core in [`packages/core`](packages/core/) and the MCP server in [`packages/mcp`](packages/mcp/). The spec, schemas and examples stay at the root; the core copies them in when it is packed.

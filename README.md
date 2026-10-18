@@ -22,7 +22,7 @@ Agent Cards say who an agent is. A2A carries messages between agents. MCP connec
 
 <p align="center"><img src="docs/fields.svg" alt="Each Work Report field answers a Work Order field: evidence proves criteria, cost stays within budget, tools used stay within allowed tools" width="760"></p>
 
-More diagrams: [message sequence](docs/sequence.svg) · [lifecycle](docs/lifecycle.svg) · [delegation](docs/delegation.svg) · [handoff](docs/handoff.svg)
+More diagrams: [message sequence](docs/sequence.svg) · [lifecycle](docs/lifecycle.svg) · [delegation](docs/delegation.svg) · [handoff](docs/handoff.svg) · [authenticated actor](docs/authenticated-actor.svg) · [Delegation Pass](docs/delegation-pass.svg)
 
 ## Install
 
@@ -34,6 +34,7 @@ Install only the part you use:
 | Validate in a browser, Deno or Bun | `npm install agent-work-layer`, then import `agent-work-layer/validate` | 7 |
 | Validate orders and reports in Python | `pip install agent-work-layer` ([python/](python/)) | 11 |
 | Connect agent sessions (e.g. Claude Code) through MCP | `npx -y agent-work-layer-mcp` ([setup](#run-as-an-mcp-server)) | ~100 |
+| Sign or verify Delegation Passes | `npm install agent-work-layer` ([how](#delegation-pass)) | 7 |
 
 Node.js 20.11 or later. ESM only. Types included. The Python package needs Python 3.9 or later.
 
@@ -92,6 +93,8 @@ The desk enforces the spec as you go:
 - Cost within budget and finishing before the deadline. Going over either expires the order.
 - Sub-orders can only narrow their parent's authority.
 
+Optionally, it also signs the worker's authority into a [Delegation Pass](#delegation-pass) that gateways and other systems can check without the desk.
+
 ### Hand off unfinished work
 
 When a worker fails, gets blocked or is cancelled, it can say what the next worker should know. The manager passes that along in the next order:
@@ -136,7 +139,7 @@ The JSON Schemas are exported too: `workOrderSchema`, `workReportSchema`, or `ag
 
 The server lives in its own package, [`agent-work-layer-mcp`](packages/mcp/), so people who only validate documents don't download the MCP SDK.
 
-Each agent session runs its own desk process. Sessions share one folder, and each is locked to one identity, so a worker cannot approve its own work.
+**For development, over stdio.** Each agent session runs its own desk process. Sessions share one folder, and each is locked to the identity it is started with.
 
 ```sh
 # Claude Code: a manager session and a worker session, each added in its own project folder
@@ -144,7 +147,14 @@ claude mcp add awl -e AWL_STORE="$HOME/.awl" -e AWL_ACTOR=agent:manager -- npx -
 claude mcp add awl -e AWL_STORE="$HOME/.awl" -e AWL_ACTOR=agent:worker  -- npx -y agent-work-layer-mcp
 ```
 
-Tools: `create_work_order`, `list_work_orders`, `get_work_order`, `accept_work_order`, `decline_work_order`, `start_work_order`, `submit_work_report`, `answer_question`, `review_work_report`, `cancel_work_order`, `wait_for_update`.
+**For shared use, over HTTP.** One desk serves every agent, and each request's credential decides who it acts as, so a worker cannot approve its own work ([details](#authenticated-actor)):
+
+```sh
+npx -y agent-work-layer-mcp serve --keys keys.json        # { "keys": { "<key>": "agent:manager", ... } }
+claude mcp add --transport http awl http://127.0.0.1:8787/mcp --header "Authorization: Bearer $AWL_KEY"
+```
+
+Tools: `create_work_order`, `list_work_orders`, `get_work_order`, `accept_work_order`, `decline_work_order`, `start_work_order`, `submit_work_report`, `answer_question`, `review_work_report`, `cancel_work_order`, `wait_for_update`, and `renew_work_pass` when the desk issues [Delegation Passes](#delegation-pass).
 
 To embed the server in your own process or transport (`npm install agent-work-layer agent-work-layer-mcp`):
 
@@ -165,7 +175,9 @@ npx agent-work-layer validate order.json report.json      # exit 1 on invalid, p
 npx agent-work-layer validate child.json --parent order.json
 npx agent-work-layer validate order.json report.json --json
 npx agent-work-layer schema order
-npx -y agent-work-layer-mcp --store ./.awl --actor agent:worker   # the MCP desk (was "awl desk" before 0.2)
+npx -y agent-work-layer-mcp --store ./.awl --actor agent:worker   # the MCP desk on stdio (was "awl desk" before 0.2)
+npx -y agent-work-layer-mcp serve --keys keys.json                 # one shared desk over HTTP; add --pass-key/--issuer to sign passes
+npx -y agent-work-layer-mcp gateway --order <id> --config <file>   # enforce an order at every tool call; add --pass-keys to use passes
 ```
 
 `new order` starts with one criterion, a USD 1 budget, no allowed tools and a
@@ -197,21 +209,26 @@ Any active state ──cancel──▶ cancelled   ·   deadline or budget excee
 
 | Export | Purpose |
 |---|---|
-| `WorkDesk` | Runs the lifecycle: `create`, `accept`, `decline`, `start`, `submitReport`, `answer`, `review`, `cancel`, `get`, `list`, `waitForChange` |
+| `WorkDesk` | Runs the lifecycle: `create`, `accept`, `decline`, `start`, `submitReport`, `answer`, `review`, `cancel`, `get`, `list`, `waitForChange`, and `issuePass` when it issues passes |
 | `MemoryStore`, `FileStore`, `SqliteStore`, `DeskStore` | Storage. Implement `DeskStore` (4 methods) to use a database |
 | `validateOrder`, `validateReport`, `validateChildOrder`, `hasInvalid` | Spec checks, returning `Finding[]` |
 | `isWorkOrder`, `isWorkReport` | Type guards |
 | `toolAllowed`, `patternCovered` | Tool pattern matching |
 | `nextState`, `allowedActions`, `STATES`, `ROLE_FOR`, `isTerminal` | The state machine |
 | `AwlError`, `isAwlError` | Typed errors with `code` and `findings` |
+| `signPass`, `verifyPass`, `decodePass`, `PassError` | [Delegation Passes](#delegation-pass): sign, verify (including narrowing against a parent), read |
 | `ORDER_SPEC`, `REPORT_SPEC`, `ORDER_SPECS`, `REPORT_SPECS` | The spec version written, and every version read |
 | `createDeskServer` (from `agent-work-layer-mcp`) | MCP server for a desk |
+| `createDeskHttpHandler`, `apiKeyAuth`, `bearerAuth`, `AuthError` (from `agent-work-layer-mcp`) | The desk over HTTP, with the actor from each request's credential |
+| `createGateway` (from `agent-work-layer-mcp`) | MCP gateway enforcing an order, or a Delegation Pass, at every tool call |
 
-`WorkDesk` options: `store`, `clock` (for tests), `newId`, `onEvent(event, record)` (webhooks, logging, metrics).
+`WorkDesk` options: `store`, `clock` (for tests), `newId`, `onEvent(event, record)` (webhooks, logging, metrics), `passes: { key, issuer, ttlSeconds? }` (sign Delegation Passes).
 
 ### Error codes
 
 `NOT_FOUND`, `ALREADY_EXISTS`, `FORBIDDEN`, `INVALID_TRANSITION`, `VALIDATION_FAILED` (with `findings`), `CONFLICT` (a concurrent writer got there first; re-read and retry), `BAD_REQUEST`.
+
+`PassError` codes: `MALFORMED`, `UNSUPPORTED`, `BAD_SIGNATURE`, `EXPIRED`, `NOT_YET_VALID`, `WRONG_ISSUER`, `WRONG_WORKER`, `WRONG_ORDER`, `WRONG_PARENT`, `WIDER_THAN_PARENT` (with `findings` from C1–C3).
 
 ### Custom storage
 
@@ -238,7 +255,7 @@ class PostgresStore implements DeskStore {
 
 ## Production notes
 
-A stdio desk trusts the `actor` it is started with. In production, run one desk over HTTP that takes the actor from each request's credential: `npx -y agent-work-layer-mcp serve --keys keys.json`, or `createDeskHttpHandler` with your own `authenticate` hook (OAuth 2.1 bearer tokens, API keys, mTLS). See the [MCP package README](packages/mcp/README.md#shared-desk-over-http). For real-time enforcement, run the MCP gateway (`npx -y agent-work-layer-mcp gateway`), which checks `tools` and `budget` at each tool call, not only when the report arrives. See [SPEC.md §9.1](SPEC.md#91-mcp-gateway) and [§10](SPEC.md#10-security).
+A stdio desk trusts the `actor` it is started with. In production, run one desk over HTTP that takes the actor from each request's credential: `npx -y agent-work-layer-mcp serve --keys keys.json`, or `createDeskHttpHandler` with your own `authenticate` hook (OAuth 2.1 bearer tokens, API keys, mTLS). See the [MCP package README](packages/mcp/README.md#shared-desk-over-http). For real-time enforcement, run the MCP gateway (`npx -y agent-work-layer-mcp gateway`), which checks `tools` and `budget` at each tool call, not only when the report arrives. When the gateway or another team's system can't read the desk, give it [Delegation Passes](#delegation-pass) instead. See [SPEC.md §9.1](SPEC.md#91-mcp-gateway) and [§10](SPEC.md#10-security).
 
 ## Authenticated actor
 
@@ -246,15 +263,37 @@ With stdio, each agent runs its own desk and declares its own `actor`, so a work
 
 <p align="center"><img src="docs/authenticated-actor.svg" alt="With stdio, a worker can start its own desk with --actor agent:manager and approve its own report. Over HTTP, agents send a credential to one desk, authenticate(request) maps it to an agent ref before the role check, and a spoofed actor argument is refused" width="760"></p>
 
-## Planned: the Delegation Pass
+## Delegation Pass
 
-Not built yet; contributions are welcome.
+When a worker starts, the desk signs a short-lived pass (a JWS) carrying the order's tools, budget and deadline. The worker presents it with each tool call, and a gateway or another team's system verifies it on its own, without calling the desk. A sub-order gets a narrower pass that names its parent, so the delegation rules (C1–C3) can be checked offline ([#17](https://github.com/probita-ai/agent-work-layer/issues/17), [SPEC.md §10.2](SPEC.md#102-delegation-pass)).
 
-### Delegation Pass ([#17](https://github.com/probita-ai/agent-work-layer/issues/17))
+<p align="center"><img src="docs/delegation-pass.svg" alt="The desk signs a pass when the worker starts; the gateway verifies it on each tool call, allowing filings/search and refusing web/browse; a sub-order gets a narrower pass naming its parent. Below, the claims in a pass: iss, sub, awl_order, awl_tools, awl_budget, awl_parent, awl_deadline, awl_attempt, iat, exp, jti, and the typ awl-pass+jwt" width="760"></p>
 
-When a worker starts, the desk signs a short-lived pass (a JWS) carrying the order's tools, budget and deadline. The worker presents it with each tool call, and a gateway or another team's system verifies it on its own, without calling the desk. A sub-order gets a narrower pass that names its parent, so the delegation rules (C1–C3) can be checked offline.
+- A pass lasts 15 minutes by default, never past the deadline. The desk issues a new one each time the order enters `working`, and the worker renews it while it works.
+- It carries the order's whole budget; the gateway tracks what has been spent.
+- Cancelling or expiring the order stops new passes. There is no other revocation, which is why passes are short.
 
-<p align="center"><img src="docs/delegation-pass.svg" alt="The desk signs a pass when the worker starts; the gateway verifies it on each tool call, allowing filings/search and refusing web/browse; a sub-order gets a narrower pass naming its parent. Below, the claims in a pass: iss, sub, awl_order, awl_tools, awl_budget, awl_parent, iat, exp, jti" width="760"></p>
+```ts
+import { WorkDesk, verifyPass } from "agent-work-layer";
+
+const desk = new WorkDesk({ passes: { key: privateJwk, issuer: "https://desk.example.com" } });
+// ...create, accept...
+const { pass } = await desk.start(id, "agent:worker");   // renew with desk.issuePass(id, "agent:worker")
+
+// Anywhere else, with only the desk's public key:
+const verified = await verifyPass(pass, publicJwk, { issuer: "https://desk.example.com", worker: "agent:worker", order: id });
+verified.allows("filings/search");   // true
+const child = await verifyPass(childPass, publicJwk, { parent: verified });   // throws WIDER_THAN_PARENT if it breaks C1–C3
+```
+
+Keys are P-256 or Ed25519 JWKs (or WebCrypto keys) that you supply; the SDK does no key management. `signPass` and `verifyPass` use WebCrypto only, so they are also in `agent-work-layer/validate` for browsers, Deno and Bun. To make a key pair in Node:
+
+```js
+const { privateKey, publicKey } = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, ["sign", "verify"]);
+console.log(JSON.stringify(await crypto.subtle.exportKey("jwk", privateKey)), JSON.stringify(await crypto.subtle.exportKey("jwk", publicKey)));
+```
+
+Over MCP, `awl-desk serve --pass-key priv.json --issuer <url>` issues passes, and `awl-desk gateway --pass-keys pub.json` enforces them; see the [MCP package README](packages/mcp/README.md#delegation-passes).
 
 ## Development
 

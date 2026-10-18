@@ -77,6 +77,9 @@ assert.deepEqual(validator.validateOrder(rec.order), []);
 assert.equal(validator.WorkDesk, undefined);
 assert.deepEqual(schema, workOrderSchema);
 await assert.rejects(import("agent-work-layer/mcp"), { code: "ERR_PACKAGE_PATH_NOT_EXPORTED" });
+const pair = await crypto.subtle.generateKey({ name: "Ed25519" }, true, ["sign", "verify"]);
+const token = await validator.signPass(rec.order, await crypto.subtle.exportKey("jwk", pair.privateKey), { issuer: "desk" });
+assert.equal((await validator.verifyPass(token, await crypto.subtle.exportKey("jwk", pair.publicKey), { worker: "w" })).claims.awl_order, rec.order.id);
 console.log("ok", VERSION);
 `,
 );

@@ -132,8 +132,11 @@ export function validateReport(report: unknown, order: WorkOrder): Finding[] {
   return out;
 }
 
+/** The parts of an order (or a Delegation Pass) that carry authority. */
+type Authority = Pick<WorkOrder, "budget" | "tools" | "deadline">;
+
 /** Runs sub-order checks C1–C3: a child order may only narrow its parent's authority. */
-export function validateChildOrder(child: WorkOrder, parent: WorkOrder): Finding[] {
+export function validateChildOrder(child: Authority, parent: Authority): Finding[] {
   const out: Finding[] = [];
   for (const unit of UNITS) {
     const limit = parent.budget[unit];

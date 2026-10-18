@@ -6,18 +6,29 @@ import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import type { CallToolResult, Tool } from "@modelcontextprotocol/sdk/types.js";
-import { AwlError, toolAllowed } from "agent-work-layer";
-import type { Amounts, OrderRecord, WorkDesk } from "agent-work-layer";
+import { AwlError, PassError, decodePass, toolAllowed, verifyPass } from "agent-work-layer";
+import type { Amounts, OrderRecord, PassKeys, WorkDesk } from "agent-work-layer";
 import { VERSION } from "./version.ts";
 
 export interface GatewayOptions {
-  desk: WorkDesk;
+  /** The desk whose order state the gateway reads. Not needed with `passKeys`. */
+  desk?: WorkDesk;
   /** The order whose `tools` and `budget` this gateway enforces. */
   orderId: string;
   /** Connected clients for the worker's real MCP servers, keyed by server name (the `server` in `server/tool`). */
   upstreams: Record<string, Client>;
-  /** Who the gateway acts as. Must be the order's worker. Default: the order's `to`. */
+  /** Who the gateway acts as. Must be the order's worker. Default: the order's `to`; required with `passKeys`. */
   actor?: string;
+  /**
+   * Work from Delegation Passes (SPEC.md §10.2) instead of the desk's order state: every call
+   * needs a valid pass for this order and worker, signed by one of these keys, and the pass's
+   * `awl_tools` and `awl_budget` are what is enforced. The desk is not read.
+   */
+  passKeys?: PassKeys;
+  /** The current pass, or a function returning it (e.g. reading a file the worker refreshes). A call's `_meta["awl/pass"]` wins. */
+  pass?: string | (() => string | undefined | Promise<string | undefined>);
+  /** Required `iss` of passes. */
+  issuer?: string;
   /**
    * Refuse calls the order does not allow. Default true. With false, the gateway only observes:
    * every tool is listed, nothing is refused, and calls the order would not allow are logged with
@@ -34,7 +45,7 @@ export interface GatewayOptions {
 }
 
 /** Why a call was refused before it reached the tool, or, when not enforcing, would have been. */
-export type RefusalCode = "UNKNOWN_TOOL" | "TOOL_NOT_ALLOWED" | "ORDER_NOT_WORKING" | "BUDGET_SPENT";
+export type RefusalCode = "UNKNOWN_TOOL" | "TOOL_NOT_ALLOWED" | "ORDER_NOT_WORKING" | "BUDGET_SPENT" | "PASS_INVALID";
 
 /** One line of the call log. Refused calls have no `n` or `ref` and do not count against the budget. */
 export interface CallRecord {
@@ -44,6 +55,10 @@ export interface CallRecord {
   ref?: string;
   /** `server/tool`. */
   tool: string;
+  /** The authority the call ran under: the order, the report attempt in progress and the pass's `jti`. */
+  order_id: string;
+  attempt?: number;
+  jti?: string;
   at: string;
   outcome: "ok" | "error" | "refused";
   ms?: number;
@@ -96,20 +111,45 @@ async function loadLog(file: string): Promise<CallRecord[]> {
   }
 }
 
+/** What a call runs under: from the desk's record, or from a verified pass. */
+interface Authority {
+  tools: readonly string[];
+  budget: Amounts;
+  attempt?: number;
+  jti?: string;
+  /** Seconds worked so far; unknown in pass mode, so `seconds` is left to the desk's report checks. */
+  worked?: number;
+  /** Why no call may run under it right now. */
+  refusal?: Refusal;
+}
+
 /**
  * Builds a gateway server for one order. It lists only the upstream tools the order allows,
  * and refuses calls that are not allowed, that come after the `tool_calls` or `seconds` budget
- * is spent, or while the order is not `working`. With `enforce: false` it logs those calls
- * instead of refusing them. Connect it to any transport.
+ * is spent, or while the order is not `working`. With `passKeys` it enforces a Delegation Pass
+ * instead of the desk's order state. With `enforce: false` it logs those calls instead of
+ * refusing them. Connect it to any transport.
  */
 export async function createGateway(options: GatewayOptions): Promise<Gateway> {
-  const { desk, orderId, upstreams, logFile, enforce = true, separator = "__", clock = () => new Date(), name = "awl-gateway" } = options;
-  const { order } = await desk.get(orderId);
-  const actor = options.actor ?? order.to;
-  if (actor !== order.to) throw new AwlError("FORBIDDEN", `only the order's worker "${order.to}" can use its gateway, not "${actor}"`);
+  const { desk, orderId, upstreams, logFile, passKeys, issuer, enforce = true, separator = "__", clock = () => new Date(), name = "awl-gateway" } = options;
+  let actor: string;
+  // In desk mode the order's tools are fixed, so they are read once.
+  let deskTools: readonly string[] | undefined;
+  if (passKeys) {
+    if (!options.actor) throw new AwlError("BAD_REQUEST", "a gateway that works from passes needs the worker's actor");
+    actor = options.actor;
+  } else {
+    if (!desk) throw new AwlError("BAD_REQUEST", "a gateway needs a desk, or passKeys to work from passes");
+    const { order } = await desk.get(orderId);
+    actor = options.actor ?? order.to;
+    if (actor !== order.to) throw new AwlError("FORBIDDEN", `only the order's worker "${order.to}" can use its gateway, not "${actor}"`);
+    deskTools = order.tools;
+  }
 
   const calls: CallRecord[] = logFile ? await loadLog(logFile) : [];
   let count = calls.reduce((max, c) => Math.max(max, c.n ?? 0), 0);
+  /** The latest authority seen, for usage(). */
+  let last: Authority | undefined;
   let logging = Promise.resolve();
   const log = (record: CallRecord) => {
     calls.push(record);
@@ -123,21 +163,61 @@ export async function createGateway(options: GatewayOptions): Promise<Gateway> {
     return logging;
   };
 
-  /** Exposed tool name → upstream server and tool. Rebuilt on every listing. */
-  let routes = new Map<string, { server: string; tool: string; allowed: boolean }>();
+  async function fromDesk(): Promise<Authority> {
+    let record = await desk!.get(orderId);
+    if (record.state === "accepted") {
+      // Started on first use, as the desk does on a report. Another call may get there first.
+      record = await desk!.start(orderId, actor).catch((e) => {
+        if (e instanceof AwlError && e.code === "CONFLICT") return desk!.get(orderId);
+        throw e;
+      });
+    }
+    return {
+      tools: record.order.tools,
+      budget: record.order.budget,
+      attempt: record.reports.length + 1,
+      ...(record.pass ? { jti: decodePass(record.pass).jti } : {}),
+      worked: workingSeconds(record, clock()),
+      ...(record.state !== "working" ? { refusal: new Refusal("ORDER_NOT_WORKING", `order "${orderId}" is ${record.state}`) } : {}),
+    };
+  }
 
-  async function listUpstream(): Promise<Tool[]> {
-    const next = new Map<string, { server: string; tool: string; allowed: boolean }>();
+  async function fromPass(meta?: Record<string, unknown>): Promise<Authority> {
+    const given = meta?.["awl/pass"];
+    const token = typeof given === "string" ? given : typeof options.pass === "function" ? await options.pass() : options.pass;
+    if (!token) return { tools: [], budget: {}, refusal: new Refusal("PASS_INVALID", `no Delegation Pass for order "${orderId}"`) };
+    try {
+      const { claims } = await verifyPass(token, passKeys!, { issuer, worker: actor, order: orderId, now: clock() });
+      return { tools: claims.awl_tools, budget: claims.awl_budget, attempt: claims.awl_attempt, jti: claims.jti };
+    } catch (e) {
+      if (!(e instanceof PassError)) throw e;
+      return { tools: [], budget: {}, refusal: new Refusal("PASS_INVALID", `${e.code}: ${e.message}`) };
+    }
+  }
+
+  const authority = async (meta?: Record<string, unknown>) => (last = await (passKeys ? fromPass(meta) : fromDesk()));
+
+  /** Exposed tool name → upstream server and tool. Rebuilt on every listing. */
+  let routes = new Map<string, { server: string; tool: string }>();
+
+  async function listUpstream(meta?: Record<string, unknown>): Promise<Tool[]> {
+    let allowedTools: readonly string[] = deskTools ?? [];
+    if (passKeys) {
+      const current = await authority(meta);
+      allowedTools = current.refusal ? [] : current.tools;
+    }
+    const next = new Map<string, { server: string; tool: string }>();
     const exposed: Tool[] = [];
     for (const [server, client] of Object.entries(upstreams)) {
       let cursor: string | undefined;
       do {
         const page = await client.listTools(cursor ? { cursor } : undefined);
         for (const tool of page.tools) {
-          const allowed = toolAllowed(`${server}/${tool.name}`, order.tools);
           const exposedName = `${server}${separator}${tool.name}`;
-          next.set(exposedName, { server, tool: tool.name, allowed });
-          if (allowed || !enforce) exposed.push({ ...tool, name: exposedName, description: `[${server}] ${tool.description ?? ""}`.trim() });
+          next.set(exposedName, { server, tool: tool.name });
+          if (!enforce || toolAllowed(`${server}/${tool.name}`, allowedTools)) {
+            exposed.push({ ...tool, name: exposedName, description: `[${server}] ${tool.description ?? ""}`.trim() });
+          }
         }
         cursor = page.nextCursor;
       } while (cursor);
@@ -147,35 +227,27 @@ export async function createGateway(options: GatewayOptions): Promise<Gateway> {
   }
 
   async function usage(): Promise<Usage> {
-    const record = await desk.get(orderId);
-    const seconds = workingSeconds(record, clock());
+    const current = passKeys ? last : await authority();
+    const budget = current?.budget ?? {};
+    const seconds = current?.worked;
     const cost: Amounts = { tool_calls: count, ...(seconds === undefined ? {} : { seconds: Math.ceil(seconds) }) };
     const remaining: Amounts = {};
-    if (order.budget.tool_calls !== undefined) remaining.tool_calls = Math.max(0, order.budget.tool_calls - count);
-    if (order.budget.seconds !== undefined) remaining.seconds = Math.max(0, order.budget.seconds - (seconds ?? 0));
+    if (budget.tool_calls !== undefined) remaining.tool_calls = Math.max(0, budget.tool_calls - count);
+    if (budget.seconds !== undefined && seconds !== undefined) remaining.seconds = Math.max(0, budget.seconds - seconds);
     const tools_used = [...new Set(calls.filter((c) => c.n !== undefined).map((c) => c.tool))];
     return { order_id: orderId, tools_used, cost, remaining, calls: [...calls] };
   }
 
   /**
-   * Checks the call against the order and reserves its number. Returns the seconds left when
-   * enforcing a time limit, and what the order would refuse when not enforcing.
+   * Checks the call against the order (or its pass) and reserves its number. Returns the seconds
+   * left when enforcing a time limit, and what the order would refuse when not enforcing.
    */
-  async function admit(server: string, tool: string): Promise<{ n: number; secondsLeft?: number; violation?: Refusal }> {
-    let record = await desk.get(orderId);
-    if (record.state === "accepted") {
-      // Started on first use, as the desk does on a report. Another call may get there first.
-      record = await desk.start(orderId, actor).catch((e) => {
-        if (e instanceof AwlError && e.code === "CONFLICT") return desk.get(orderId);
-        throw e;
-      });
-    }
-
-    const { tool_calls, seconds } = order.budget;
-    const secondsLeft = seconds === undefined ? undefined : seconds - (workingSeconds(record, clock()) ?? 0);
+  async function admit(server: string, tool: string, auth: Authority): Promise<{ n: number; secondsLeft?: number; violation?: Refusal }> {
+    const { tool_calls, seconds } = auth.budget;
+    const secondsLeft = seconds === undefined || passKeys ? undefined : seconds - (auth.worked ?? 0);
     const violation =
-      record.state !== "working" ? new Refusal("ORDER_NOT_WORKING", `order "${orderId}" is ${record.state}`)
-      : !toolAllowed(`${server}/${tool}`, order.tools) ? new Refusal("TOOL_NOT_ALLOWED", `"${server}/${tool}" is not allowed by order "${orderId}"`)
+      auth.refusal ? auth.refusal
+      : !toolAllowed(`${server}/${tool}`, auth.tools) ? new Refusal("TOOL_NOT_ALLOWED", `"${server}/${tool}" is not allowed by order "${orderId}"`)
       : tool_calls !== undefined && count >= tool_calls ? new Refusal("BUDGET_SPENT", `all ${tool_calls} tool calls are spent`)
       : secondsLeft !== undefined && secondsLeft <= 0 ? new Refusal("BUDGET_SPENT", `all ${seconds} seconds are spent`)
       : undefined;
@@ -187,9 +259,9 @@ export async function createGateway(options: GatewayOptions): Promise<Gateway> {
 
   const server = new Server({ name, version: VERSION }, { capabilities: { tools: {} } });
 
-  server.setRequestHandler(ListToolsRequestSchema, async () => ({
+  server.setRequestHandler(ListToolsRequestSchema, async (request) => ({
     tools: [
-      ...(await listUpstream()),
+      ...(await listUpstream(request.params?._meta)),
       {
         name: USAGE_TOOL,
         description:
@@ -205,19 +277,21 @@ export async function createGateway(options: GatewayOptions): Promise<Gateway> {
     const exposedName = request.params.name;
     if (exposedName === USAGE_TOOL) return { content: [text(await usage())] };
 
-    if (!routes.has(exposedName)) await listUpstream();
+    if (!routes.has(exposedName)) await listUpstream(request.params._meta);
     const route = routes.get(exposedName);
     const at = clock().toISOString();
     const qualified = route ? `${route.server}/${route.tool}` : exposedName;
 
+    let auth: Authority | undefined;
     let admitted: Awaited<ReturnType<typeof admit>>;
     try {
       if (!route) throw new Refusal("UNKNOWN_TOOL", `no tool "${exposedName}" on this gateway`);
-      admitted = await admit(route.server, route.tool);
+      auth = await authority(request.params._meta);
+      admitted = await admit(route.server, route.tool, auth);
     } catch (e) {
       if (e instanceof AwlError) return { isError: true, content: [text(e.toJSON())] };
       if (!(e instanceof Refusal)) throw e;
-      await log({ tool: qualified, at, outcome: "refused", refusal: e.code, message: e.message });
+      await log({ tool: qualified, order_id: orderId, ...grant(auth), at, outcome: "refused", refusal: e.code, message: e.message });
       return { isError: true, content: [text({ code: e.code, message: e.message })] };
     }
 
@@ -236,16 +310,27 @@ export async function createGateway(options: GatewayOptions): Promise<Gateway> {
       result = { isError: true, content: [text(`call failed: ${(e as Error).message}`)] };
     }
     await log({
-      n, ref, tool: qualified, at, outcome: result.isError ? "error" : "ok", ms: Date.now() - started,
+      n, ref, tool: qualified, order_id: orderId, ...grant(auth), at, outcome: result.isError ? "error" : "ok", ms: Date.now() - started,
       ...(violation ? { violation: violation.code, message: violation.message } : {}),
     });
     const note = violation ? `[awl evidence ref: ${ref}; not allowed by the order: ${violation.message}]` : `[awl evidence ref: ${ref}]`;
     return {
       ...result,
       content: [...(result.content ?? []), text(note)],
-      _meta: { ...result._meta, "awl/ref": ref, ...(violation ? { "awl/violation": violation.code } : {}) },
+      _meta: {
+        ...result._meta, "awl/ref": ref, "awl/order": orderId,
+        ...(auth?.attempt !== undefined ? { "awl/attempt": auth.attempt } : {}),
+        ...(auth?.jti ? { "awl/jti": auth.jti } : {}),
+        ...(violation ? { "awl/violation": violation.code } : {}),
+      },
     };
   });
 
   return { server, usage };
 }
+
+/** The attempt and pass id a call ran under, for its call record. */
+const grant = (auth?: Authority) => ({
+  ...(auth?.attempt !== undefined ? { attempt: auth.attempt } : {}),
+  ...(auth?.jti ? { jti: auth.jti } : {}),
+});

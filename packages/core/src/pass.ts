@@ -8,6 +8,8 @@ import type { AgentRef, Amounts, Finding, WorkOrder } from "./types.ts";
 export const PASS_TYP = "awl-pass+jwt";
 /** Default lifetime: 15 minutes, and never past the order's deadline. */
 export const PASS_TTL_SECONDS = 900;
+/** How far in the future `iat` may be: the issuer's clock may run ahead of the verifier's. */
+const IAT_SKEW_SECONDS = 60;
 
 export interface PassClaims {
   /** The desk that issued the pass. */
@@ -110,7 +112,7 @@ export interface VerifyPassOptions {
    * wider than it (C1–C3). Verify a chain from the top down, passing each result to the next.
    */
   parent?: VerifiedPass;
-  /** Seconds of clock skew to allow on `exp` and `iat`. Default 0. */
+  /** Seconds of clock skew to allow on `exp` (default 0) and on `iat` (at least 60, since issuer and verifier clocks differ). */
   clockToleranceSeconds?: number;
   now?: Date;
 }
@@ -285,7 +287,7 @@ export async function verifyPass(token: string, keys: PassKeys, options: VerifyP
   const t = now.getTime();
   const expiresAt = new Date(Math.min(c.exp * 1000, Date.parse(c.awl_deadline)));
   if (expiresAt.getTime() + clockToleranceSeconds * 1000 <= t) throw new PassError("EXPIRED", `pass "${c.jti}" expired at ${expiresAt.toISOString()}`);
-  if (c.iat * 1000 - clockToleranceSeconds * 1000 > t) throw new PassError("NOT_YET_VALID", `pass "${c.jti}" is issued in the future`);
+  if ((c.iat - Math.max(clockToleranceSeconds, IAT_SKEW_SECONDS)) * 1000 > t) throw new PassError("NOT_YET_VALID", `pass "${c.jti}" is issued in the future`);
   if (worker !== undefined && c.sub !== worker) throw new PassError("WRONG_WORKER", `issued to "${c.sub}", not "${worker}"`);
   if (order !== undefined && c.awl_order !== order) throw new PassError("WRONG_ORDER", `for order "${c.awl_order}", not "${order}"`);
 

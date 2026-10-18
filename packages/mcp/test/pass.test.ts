@@ -90,18 +90,18 @@ describe("gateway working from Delegation Passes", () => {
 
     token = await passFor(order(), { now: new Date(now.getTime() - 3_600_000) });
     assert.equal(await code(), "PASS_INVALID EXPIRED");
-    token = await passFor(order({ to: STRANGER }));
+    token = await passFor(order({ to: STRANGER }), { now });
     assert.equal(await code(), "PASS_INVALID WRONG_WORKER");
-    token = await passFor(order({ id: "wo_2" }));
+    token = await passFor(order({ id: "wo_2" }), { now });
     assert.equal(await code(), "PASS_INVALID WRONG_ORDER");
-    token = await signPass(order(), priv, { issuer: "https://evil.example.com" });
+    token = await signPass(order(), priv, { issuer: "https://evil.example.com", now });
     assert.equal(await code(), "PASS_INVALID WRONG_ISSUER");
-    const good = await passFor();
+    const good = await passFor(order(), { now });
     token = good.slice(0, -4) + (good.endsWith("AAAA") ? "BBBB" : "AAAA");
     assert.equal(await code(), "PASS_INVALID BAD_SIGNATURE");
     assert.deepEqual(arrived, []);
 
-    token = await passFor();
+    token = await passFor(order(), { now });
     assert.equal((await call("filings__search")).isError, undefined);
     now = new Date(now.getTime() + 901_000);
     assert.equal(await code(), "PASS_INVALID EXPIRED");

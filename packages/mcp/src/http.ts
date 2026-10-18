@@ -61,8 +61,13 @@ function send(res: ServerResponse, status: number, body: unknown, headers: Recor
  * by a stateless MCP server bound to the authenticated agent, so no session outlives its credential.
  */
 export function createDeskHttpHandler({ desk, authenticate, path = "/mcp", resourceMetadata, name }: DeskHttpOptions) {
-  return async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
-    const { pathname } = new URL(req.url ?? "/", "http://desk");
+  const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
+    let pathname: string;
+    try {
+      ({ pathname } = new URL(req.url ?? "/", "http://desk"));
+    } catch {
+      return send(res, 400, { error: "bad_request" });
+    }
     if (resourceMetadata && pathname === WELL_KNOWN + path && req.method === "GET") return send(res, 200, resourceMetadata);
     if (pathname !== path) return send(res, 404, { error: "not_found" });
 
@@ -84,6 +89,16 @@ export function createDeskHttpHandler({ desk, authenticate, path = "/mcp", resou
     await server.connect(transport);
     await transport.handleRequest(req, res);
   };
+
+  // Never rejects, so it can be passed straight to `http.createServer`.
+  return async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
+    try {
+      await handle(req, res);
+    } catch {
+      if (!res.headersSent) send(res, 500, { error: "server_error" });
+      else res.end();
+    }
+  };
 }
 
 /** Reads the token from `Authorization: Bearer <token>`. */
@@ -101,7 +116,7 @@ const sha256 = (s: string) => createHash("sha256").update(s).digest("hex");
 export function apiKeyAuth(keys: Record<string, AgentRef>): Authenticate {
   const byHash = new Map<string, AgentRef>();
   for (const [key, agent] of Object.entries(keys)) {
-    if (!key || !agent) throw new Error("apiKeyAuth: every key and agent ref must be non-empty");
+    if (!key || typeof agent !== "string" || !agent) throw new Error("apiKeyAuth: every key and agent ref must be a non-empty string");
     byHash.set(sha256(key), agent);
   }
   return (req) => {

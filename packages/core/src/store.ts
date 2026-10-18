@@ -1,4 +1,5 @@
 // Storage for desks. Implement DeskStore to back a desk with a database.
+import { randomUUID } from "node:crypto";
 import { mkdir, readFile, readdir, rename, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { join } from "node:path";
@@ -53,11 +54,14 @@ const SAFE_ID = /^[A-Za-z0-9_.-]{1,128}$/;
 
 /**
  * One JSON file per order in `<dir>/orders`. Several processes may share a folder.
- * Writes are atomic (write then rename); the CONFLICT check is best-effort across processes.
+ * Writes are atomic (write then rename). Within one process, writes to an order run one at a
+ * time, so the CONFLICT check is exact; across processes it is best-effort.
  */
 export class FileStore implements DeskStore {
   readonly dir: string;
   #ready: Promise<unknown>;
+  /** Tail of each order's queue of pending writes. */
+  #queues = new Map<string, Promise<unknown>>();
 
   constructor(dir: string) {
     this.dir = join(dir, "orders");
@@ -71,7 +75,7 @@ export class FileStore implements DeskStore {
 
   async #write(record: OrderRecord) {
     const file = this.#path(record.order.id);
-    const tmp = `${file}.${process.pid}.${Date.now()}.tmp`;
+    const tmp = `${file}.${randomUUID()}.tmp`;
     await writeFile(tmp, JSON.stringify(record, null, 2));
     await rename(tmp, file);
   }
@@ -86,16 +90,32 @@ export class FileStore implements DeskStore {
     }
   }
 
+  /** Runs `fn` after every earlier write to order `id` in this process has finished. */
+  async #serial<T>(id: string, fn: () => Promise<T>): Promise<T> {
+    const run = (this.#queues.get(id) ?? Promise.resolve()).then(fn);
+    const tail = run.catch(() => {});
+    this.#queues.set(id, tail);
+    try {
+      return await run;
+    } finally {
+      if (this.#queues.get(id) === tail) this.#queues.delete(id);
+    }
+  }
+
   async insert(record: OrderRecord) {
-    if (await this.read(record.order.id)) throw new AwlError("ALREADY_EXISTS", `order "${record.order.id}" already exists`);
-    await this.#write(record);
+    await this.#serial(record.order.id, async () => {
+      if (await this.read(record.order.id)) throw new AwlError("ALREADY_EXISTS", `order "${record.order.id}" already exists`);
+      await this.#write(record);
+    });
   }
 
   async update(record: OrderRecord, expectedSeq: number) {
-    const current = await this.read(record.order.id);
-    if (!current) throw new AwlError("NOT_FOUND", `no order "${record.order.id}"`);
-    if (lastSeq(current) !== expectedSeq) throw new AwlError("CONFLICT", `order "${record.order.id}" changed since it was read`);
-    await this.#write(record);
+    await this.#serial(record.order.id, async () => {
+      const current = await this.read(record.order.id);
+      if (!current) throw new AwlError("NOT_FOUND", `no order "${record.order.id}"`);
+      if (lastSeq(current) !== expectedSeq) throw new AwlError("CONFLICT", `order "${record.order.id}" changed since it was read`);
+      await this.#write(record);
+    });
   }
 
   async list() {

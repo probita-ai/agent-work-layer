@@ -48,9 +48,10 @@ export async function runServe(args: string[]): Promise<void> {
 
   let authenticate;
   try {
-    const { keys } = JSON.parse(await readFile(values.keys!, "utf8")) as { keys?: Record<string, string> };
-    if (!keys || !Object.keys(keys).length) throw new Error('needs a non-empty "keys" object');
-    authenticate = apiKeyAuth(keys);
+    const { keys } = JSON.parse(await readFile(values.keys!, "utf8")) as { keys?: unknown };
+    if (!keys || typeof keys !== "object" || Array.isArray(keys) || !Object.keys(keys).length) throw new Error('needs a non-empty "keys" object');
+    if (!Object.values(keys).every((agent) => typeof agent === "string")) throw new Error('every value in "keys" must be an agent ref string');
+    authenticate = apiKeyAuth(keys as Record<string, string>);
   } catch (e) {
     console.error(`awl-desk serve: ${values.keys}: ${(e as Error).message}`);
     process.exit(2);
@@ -58,12 +59,7 @@ export async function runServe(args: string[]): Promise<void> {
 
   const desk = new WorkDesk({ store: new FileStore(values.store ?? process.env.AWL_STORE ?? ".awl") });
   const handle = createDeskHttpHandler({ desk, authenticate });
-  const http = createServer((req, res) => {
-    handle(req, res).catch((e) => {
-      console.error(`awl-desk serve: ${(e as Error).message}`);
-      if (!res.headersSent) res.writeHead(500).end();
-    });
-  });
+  const http = createServer(handle);
   const host = values.host ?? "127.0.0.1";
   http.listen(port, host, () => {
     const address = http.address();

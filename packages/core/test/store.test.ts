@@ -102,6 +102,18 @@ describe("FileStore", () => {
     assert.equal((await manager.get(order.id)).state, "accepted");
   });
 
+  test("concurrent writes to one order: exactly one wins, the rest conflict", async () => {
+    const dir = tempDir();
+    const store = new FileStore(dir);
+    await store.insert(record());
+    const results = await Promise.allSettled(Array.from({ length: 10 }, () => store.update(advanced(record()), 1)));
+    assert.equal(results.filter((r) => r.status === "fulfilled").length, 1);
+    for (const r of results) if (r.status === "rejected") assert.equal(r.reason.code, "CONFLICT");
+    const inserts = await Promise.allSettled([store.insert(record("wo_2")), store.insert(record("wo_2"))]);
+    assert.deepEqual(inserts.map((r) => r.status).sort(), ["fulfilled", "rejected"]);
+    assert.deepEqual(readdirSync(join(dir, "orders")).sort(), ["wo_1.json", "wo_2.json"]);
+  });
+
   test("leaves no temporary files behind", async () => {
     const dir = tempDir();
     const store = new FileStore(dir);

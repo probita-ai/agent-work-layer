@@ -2,7 +2,7 @@ import { describe, test, after } from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { writeFileSync } from "node:fs";
-import { createServer } from "node:http";
+import { createServer, request } from "node:http";
 import type { AddressInfo } from "node:net";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -104,9 +104,19 @@ describe("desk over HTTP with API keys", () => {
     assert.equal((await post(new URL("/other", url), { authorization: "Bearer key-worker" })).status, 404);
   });
 
+  test("answers a malformed request target with 400", async () => {
+    const url = await serve(apiKeyAuth(KEYS));
+    const status = await new Promise((resolve, reject) =>
+      request({ host: url.hostname, port: url.port, path: "//[/mcp", method: "POST" }, (res) => resolve(res.resume().statusCode)).on("error", reject).end(),
+    );
+    assert.equal(status, 400);
+    assert.equal((await post(url, { authorization: "Bearer key-worker" })).status, 200, "server still up");
+  });
+
   test("rejects empty keys and agent refs", () => {
     assert.throws(() => apiKeyAuth({ "": MANAGER }));
     assert.throws(() => apiKeyAuth({ k: "" }));
+    assert.throws(() => apiKeyAuth({ k: 1 } as unknown as Record<string, string>));
   });
 });
 
@@ -188,12 +198,29 @@ describe("desk over HTTP with OAuth bearer tokens", () => {
 describe("awl-desk serve", () => {
   const cli = join(fileURLToPath(new URL("..", import.meta.url)), "src", "cli.ts");
 
-  test("refuses to start without keys", async () => {
-    const child = spawn(process.execPath, [cli, "serve"], { stdio: ["ignore", "ignore", "pipe"] });
+  async function exitOf(args: string[]) {
+    const child = spawn(process.execPath, [cli, "serve", ...args], { stdio: ["ignore", "ignore", "pipe"] });
     let stderr = "";
     child.stderr.on("data", (d) => (stderr += d));
-    assert.equal(await new Promise((resolve) => child.on("exit", resolve)), 2);
-    assert.match(stderr, /--keys is required/);
+    const code = await new Promise((resolve) => child.on("exit", resolve));
+    return { code, stderr };
+  }
+
+  test("refuses to start without keys", async () => {
+    const r = await exitOf([]);
+    assert.equal(r.code, 2);
+    assert.match(r.stderr, /--keys is required/);
+  });
+
+  test("refuses a malformed keys file instead of inventing keys", async () => {
+    const dir = tempDir();
+    for (const keys of [["agent:manager"], { k: 1 }, {}, "agent:manager"]) {
+      const file = join(dir, "keys.json");
+      writeFileSync(file, JSON.stringify({ keys }));
+      const r = await exitOf(["--keys", file, "--port", "0"]);
+      assert.equal(r.code, 2, JSON.stringify(keys));
+      assert.match(r.stderr, /keys/);
+    }
   });
 
   test("serves a shared desk where the key decides the actor", async () => {

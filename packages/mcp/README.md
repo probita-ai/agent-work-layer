@@ -91,7 +91,10 @@ In code, pass an `authenticate(request)` hook. It returns the agent ref, or thro
 import { createServer } from "node:http";
 import { createDeskHttpHandler, apiKeyAuth } from "agent-work-layer-mcp";
 
-const handle = createDeskHttpHandler({ desk, authenticate: apiKeyAuth({ [process.env.MANAGER_KEY!]: "agent:manager" }) });
+const managerKey = process.env.MANAGER_KEY;
+if (!managerKey) throw new Error("MANAGER_KEY is not set");
+
+const handle = createDeskHttpHandler({ desk, authenticate: apiKeyAuth({ [managerKey]: "agent:manager" }) });
 createServer(handle).listen(8787);
 ```
 
@@ -109,7 +112,7 @@ const handle = createDeskHttpHandler({
   authenticate: bearerAuth({
     verify: async (token) => (await jwtVerify(token, jwks, { issuer: "https://auth.example.com" })).payload,
     audience: resource,
-    agents: (claims) => `agent:${claims.sub}`, // or a map { "<sub>": "agent:manager" }; default: sub as is
+    agents: (claims) => (claims.sub ? `agent:${claims.sub}` : undefined), // or a map { "<sub>": "agent:manager" }; default: sub as is
     resourceMetadataUrl: resourceMetadataUrl(resource),
   }),
   resourceMetadata: { resource, authorization_servers: ["https://auth.example.com"] },

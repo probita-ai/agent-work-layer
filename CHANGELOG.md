@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-`agent-work-layer-mcp`.
+`agent-work-layer-mcp`, and a fix in `agent-work-layer`.
 
 ### Added
 
@@ -10,6 +10,10 @@
 - SPEC.md §10.1: what binding `actor` to an authenticated identity means, and how an MCP desk does it.
 
 Stdio mode is unchanged.
+
+### Fixed
+
+- `agent-work-layer`: `FileStore` runs writes to one order one at a time within a process, so concurrent transitions get `CONFLICT` instead of overwriting each other's state and events, and temporary files get unique names. Across processes the check stays best-effort; use `SqliteStore` for an atomic one.
 
 ## 0.4.1 — 2026-10-14
 

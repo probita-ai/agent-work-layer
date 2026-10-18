@@ -85,7 +85,9 @@ describe("signPass and verifyPass", () => {
     const token = await sign();
     await rejects(verify(token, { now: new Date(NOW.getTime() + 900_000) }), "EXPIRED");
     assert.ok(await verify(token, { now: new Date(NOW.getTime() + 900_000), clockToleranceSeconds: 5 }));
-    await rejects(verify(token, { now: new Date(NOW.getTime() - 60_000) }), "NOT_YET_VALID");
+    // iat may be up to a minute ahead, for clock skew between issuer and verifier.
+    assert.ok(await verify(token, { now: new Date(NOW.getTime() - 60_000) }));
+    await rejects(verify(token, { now: new Date(NOW.getTime() - 61_000) }), "NOT_YET_VALID");
   });
 
   test("rejects a bad signature, a tampered claim and a foreign key", async () => {

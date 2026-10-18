@@ -92,6 +92,7 @@ The desk enforces the spec as you go:
 - Only allowed tools.
 - Cost within budget and finishing before the deadline. Going over either expires the order.
 - Sub-orders can only narrow their parent's authority.
+- A reissued order can only continue a finished one, so one job never has two live orders.
 
 Optionally, it also signs the worker's authority into a [Delegation Pass](#delegation-pass) that gateways and other systems can check without the desk.
 
@@ -99,7 +100,7 @@ Optionally, it also signs the worker's authority into a [Delegation Pass](#deleg
 
 When a worker fails, gets blocked or is cancelled, it can say what the next worker should know. The manager passes that along in the next order:
 
-<p align="center"><img src="docs/handoff.svg" alt="Worker A reports failed with a handoff; the manager reissues the job to Worker B with the same handoff: summary, decisions, what was tried, open questions and next step" width="760"></p>
+<p align="center"><img src="docs/handoff.svg" alt="Worker A reports failed with a handoff; the manager cancels that order and reissues the job to Worker B with continues pointing at it and the same handoff: summary, decisions, what was tried, open questions and next step" width="760"></p>
 
 ```ts
 await desk.submitReport(order.id, {
@@ -114,10 +115,13 @@ await desk.submitReport(order.id, {
 }, "agent:researcher");
 
 const { handoff } = (await desk.get(order.id)).reports.at(-1)!;
-await desk.create({ ...nextJob, to: "agent:other-worker", handoff }, "agent:manager");
+await desk.cancel(order.id, "agent:manager", "reissuing");   // a continued order must be finished
+await desk.create({ ...nextJob, to: "agent:other-worker", handoff, continues: order.id }, "agent:manager");
+
+await desk.list({ continues: order.id });   // the orders that pick up from this one
 ```
 
-`context` lists what to read; `handoff` says what was decided and already tried. See [SPEC.md §4.4](SPEC.md#44-handoff).
+`context` lists what to read; `handoff` says what was decided and already tried; `continues` links the new order to the one it replaces, so the chain of orders is the job's full history. Unlike `parent_id`, it doesn't narrow anything: the new order can have a different worker, budget and tools. See [SPEC.md §4.4](SPEC.md#44-handoff) and [§4.5](SPEC.md#45-continuation).
 
 ## Validate documents
 

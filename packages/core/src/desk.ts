@@ -44,6 +44,8 @@ export interface ListFilter {
   from?: AgentRef;
   state?: State;
   parent_id?: string;
+  /** Orders that continue this order id. */
+  continues?: string;
 }
 
 export interface WaitOptions {
@@ -61,8 +63,11 @@ export interface SubmitResult {
 export const lastSeq = (record: OrderRecord): number => record.events.at(-1)?.seq ?? 0;
 
 export function summarize(record: OrderRecord): OrderSummary {
-  const { id, from, to, goal, deadline, parent_id } = record.order;
-  return { id, state: record.state, from, to, goal, deadline, ...(parent_id ? { parent_id } : {}), last_seq: lastSeq(record) };
+  const { id, from, to, goal, deadline, parent_id, continues } = record.order;
+  return {
+    id, state: record.state, from, to, goal, deadline,
+    ...(parent_id ? { parent_id } : {}), ...(continues ? { continues } : {}), last_seq: lastSeq(record),
+  };
 }
 
 export class WorkDesk {
@@ -102,7 +107,8 @@ export class WorkDesk {
         (!filter.to || r.order.to === filter.to) &&
         (!filter.from || r.order.from === filter.from) &&
         (!filter.state || r.state === filter.state) &&
-        (!filter.parent_id || r.order.parent_id === filter.parent_id))
+        (!filter.parent_id || r.order.parent_id === filter.parent_id) &&
+        (!filter.continues || r.order.continues === filter.continues))
       .sort((a, b) => a.order.created_at.localeCompare(b.order.created_at))
       .map(summarize);
   }
@@ -120,7 +126,10 @@ export class WorkDesk {
 
   // ---- manager actions ------------------------------------------------------
 
-  /** Issues a new order. With `parent_id`, only the parent's worker may create it, and only narrower (§8). */
+  /**
+   * Issues a new order. With `parent_id`, only the parent's worker may create it, and only narrower (§8).
+   * With `continues`, the earlier order must be finished, be the same manager's, and not be continued yet (§4.5).
+   */
   async create(input: WorkOrderInput, actor: AgentRef): Promise<OrderRecord> {
     requireActor(actor);
     const order = {
@@ -140,6 +149,16 @@ export class WorkDesk {
       if (actor !== parent.order.to) throw new AwlError("FORBIDDEN", `only the parent's worker can split order "${order.parent_id}"`);
       const childFindings = validateChildOrder(order, parent.order);
       if (childFindings.length) throw new AwlError("VALIDATION_FAILED", "sub-order exceeds its parent's authority", childFindings);
+    }
+
+    if (order.continues) {
+      const earlier = await this.get(order.continues);
+      if (!isTerminal(earlier.state)) {
+        throw new AwlError("INVALID_TRANSITION", `order "${order.continues}" is ${earlier.state}; only a finished order can be continued`);
+      }
+      if (actor !== earlier.order.from) throw new AwlError("FORBIDDEN", `only the manager of "${order.continues}" can continue it`);
+      const next = (await this.store.list()).find((r) => r.order.continues === order.continues);
+      if (next) throw new AwlError("ALREADY_EXISTS", `order "${order.continues}" is already continued by "${next.order.id}"`);
     }
 
     const record: OrderRecord = { order, state: "offered", reports: [], events: [], findings: [] };

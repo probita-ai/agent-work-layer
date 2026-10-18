@@ -89,7 +89,9 @@ export function createDeskServer({ desk, actor: sessionActor, name = "awl-work-d
       annotations: CREATE,
       description:
         "Issue a Work Order to a worker agent. Every criterion must be provable with evidence. " +
-        "Set parent_id to split your own order into a sub-order; it may only narrow budget, tools and deadline.",
+        "Set parent_id to split your own order into a sub-order; it may only narrow budget, tools and deadline. " +
+        "Set continues to reissue a finished order (approved, declined, cancelled or expired) to a new worker, usually with its handoff; " +
+        "cancel a failed or blocked order first.",
       inputSchema: {
         actor: actorArg,
         to: z.string().describe("Worker agent reference (Agent Card URL or name)"),
@@ -104,6 +106,7 @@ export function createDeskServer({ desk, actor: sessionActor, name = "awl-work-d
         handoff: handoff.optional().describe("What a previous worker learned: decisions, what was tried, open questions, next step"),
         output_schema: z.record(z.any()).optional().describe("JSON Schema that result.output must match"),
         parent_id: z.string().optional(),
+        continues: z.string().optional().describe("Id of the finished order this one picks up from"),
         id: z.string().optional().describe("Optional explicit id"),
         metadata: z.record(z.any()).optional(),
       },
@@ -121,6 +124,7 @@ export function createDeskServer({ desk, actor: sessionActor, name = "awl-work-d
         from: z.string().optional(),
         state: z.enum(STATES as [State, ...State[]]).optional(),
         parent_id: z.string().optional(),
+        continues: z.string().optional().describe("Find the orders that continue this order id"),
       },
     },
     async (filter) => respond(() => desk.list(defined(filter))),

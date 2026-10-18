@@ -1,11 +1,11 @@
-/** Document types for AWL v0.2. Field meanings are defined in SPEC.md §4 and §5. */
+/** Document types for AWL v0.3. Field meanings are defined in SPEC.md §4 and §5. */
 
 /** The spec version this package writes. */
-export const ORDER_SPEC = "awl/work-order@0.2";
+export const ORDER_SPEC = "awl/work-order@0.3";
 export const REPORT_SPEC = "awl/work-report@0.2";
 
 /** Every spec version this package reads (SPEC.md §11). */
-export const ORDER_SPECS = ["awl/work-order@0.1", ORDER_SPEC] as const;
+export const ORDER_SPECS = ["awl/work-order@0.1", "awl/work-order@0.2", ORDER_SPEC] as const;
 export const REPORT_SPECS = ["awl/work-report@0.1", REPORT_SPEC] as const;
 
 /** An Agent Card URL, an agent name, or `human:<id>`. */
@@ -53,6 +53,8 @@ export interface WorkOrder {
   handoff?: Handoff;
   output_schema?: Record<string, unknown>;
   parent_id?: string;
+  /** The order this one picks up from, after it stopped (§4.5). Not a sub-order: no narrowing applies. */
+  continues?: string;
   metadata?: Record<string, unknown>;
   [extension: `x-${string}`]: unknown;
 }
@@ -166,5 +168,6 @@ export interface OrderSummary {
   goal: string;
   deadline: string;
   parent_id?: string;
+  continues?: string;
   last_seq: number;
 }

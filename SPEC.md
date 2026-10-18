@@ -1,4 +1,4 @@
-# Agent Work Layer (AWL) — Specification v0.2 (draft)
+# Agent Work Layer (AWL) — Specification v0.3 (draft)
 
 Status: draft · Date: 2026-10-09 · Changes from v0.1: the optional `handoff` field (§4.4); MCP gateway (§9.1); readers accept both versions (§11); related work (§13).
 
@@ -39,7 +39,7 @@ The key words MUST, SHOULD and MAY are used as in RFC 2119.
 
 | Field          | Req | Type                | Meaning |
 |----------------|-----|---------------------|---------|
-| `spec`         | yes | `"awl/work-order@0.2"` | Format and version. Readers also accept `@0.1` (§11). |
+| `spec`         | yes | `"awl/work-order@0.3"` | Format and version. Readers also accept `@0.1` and `@0.2` (§11). |
 | `id`           | yes | string              | Unique job id, set by the desk or manager. |
 | `created_at`   | yes | timestamp           | When the order was issued. |
 | `from`         | yes | agent ref           | The manager. |
@@ -55,6 +55,7 @@ The key words MUST, SHOULD and MAY are used as in RFC 2119.
 | `handoff`      | no  | Handoff (§4.4)      | What earlier work on this job established. |
 | `output_schema`| no  | JSON Schema         | Shape that `result.output` MUST match when done. |
 | `parent_id`    | no  | string              | Set when this order was split from a larger one (§8). |
+| `continues`    | no  | string              | The id of the finished order this one picks up from (§4.5). |
 | `metadata`     | no  | object              | Free-form; ignored by checks. |
 
 ### 4.1 Criterion
@@ -100,7 +101,21 @@ When a job moves from one worker to another (after a failure, a cancellation or 
 | `open_questions` | array of string               | Questions still unanswered. |
 | `next_step`      | string                        | The most useful thing to do next. |
 
-Every field is optional, but a handoff MUST NOT be empty. A Work Report MAY carry a handoff (§5); a worker SHOULD include one when it reports `failed` or `blocked`. A manager reissuing the job MAY copy it, edited or not, into the new order. Handoff content is the previous worker's account, not verified fact; it is not checked against evidence.
+Every field is optional, but a handoff MUST NOT be empty. A Work Report MAY carry a handoff (§5); a worker SHOULD include one when it reports `failed` or `blocked`. A manager reissuing the job MAY copy it, edited or not, into the new order, and SHOULD link the two with `continues` (§4.5). Handoff content is the previous worker's account, not verified fact; it is not checked against evidence.
+
+### 4.5 Continuation
+
+When a job moves to another worker after it stopped, the new order names the order it picks up from in `continues`. A chain of orders linked this way is the full history of one job: who worked on it, and under which order, and so which authority, each earlier action ran.
+
+`continues` is not `parent_id`. A sub-order (§8) is part of a live order and may only narrow it; a continuation replaces a finished one. No narrowing rules apply: the new order may have a different worker, budget, tools and deadline. An order MAY have both, e.g. a sub-order reissued under the same parent.
+
+A desk MUST reject an order whose `continues`:
+
+- names no order it knows;
+- names an order that is not in a terminal state (`approved`, `declined`, `expired` or `cancelled`), so two orders are never live for the same job. A `failed` or `blocked` report leaves the order `submitted` or `blocked`; the manager cancels it first;
+- names an order that another order already continues, so the chain stays a single line.
+
+A desk SHOULD also accept continuations only from the earlier order's manager (`from`). Each order in a chain keeps its own budget and cost; nothing is carried over unless the manager puts it in the new order, usually as `handoff`.
 
 ## 5. Work Report
 
@@ -270,7 +285,7 @@ A pass is a JWS in compact form (a JWT) with header `typ` `awl-pass+jwt` and `al
 
 **Issuing.** A desk that issues passes signs one for the worker each time the order enters `working`, and on request while it stays `working`. A pass's `exp` MUST NOT be later than `awl_deadline`, and SHOULD be short (the reference desk uses 15 minutes); the worker renews it while it works. Short lifetimes are the only revocation: when an order is cancelled, expires or leaves `working`, the desk stops issuing passes for it. The desk SHOULD give a pass only to the authenticated worker (§10.1); a pass is only as trustworthy as the identity it was issued to.
 
-**Verifying.** A verifier MUST reject a pass whose signature does not verify with one of the issuer's keys, whose `typ` or `alg` is not one of the above, that has expired (at `exp` or `awl_deadline`, whichever is sooner), or whose `iat` is in the future. It SHOULD check `iss`, and that `sub` and `awl_order` are the worker and order it expects. A tool call is allowed when a pattern in `awl_tools` allows it (§4.3).
+**Verifying.** A verifier MUST reject a pass whose signature does not verify with one of the issuer's keys, whose `typ` or `alg` is not one of the above, that has expired (at `exp` or `awl_deadline`, whichever is sooner), or whose `iat` is in the future by more than an allowance for clock skew (the reference verifier allows 60 seconds). It SHOULD check `iss`, and that `sub` and `awl_order` are the worker and order it expects. A tool call is allowed when a pattern in `awl_tools` allows it (§4.3).
 
 **Narrowing.** A sub-order's pass names its parent in `awl_parent`. A verifier holding a pass and its parent's pass checks C1–C3 (§8) between their `awl_budget`, `awl_tools` and `awl_deadline`, and MUST reject a pass wider than its parent's or naming a different parent. A chain is verified from the top down.
 
@@ -280,7 +295,15 @@ Key distribution, rotation and JWKS hosting are out of scope. The reference impl
 
 `spec` carries the version. Minor versions (0.x) may add optional fields only. Readers MUST reject a major version they do not know.
 
-A v0.2 reader MUST accept documents marked `@0.1` and `@0.2`, and MUST reject any other version. A v0.2 writer marks new documents `@0.2`. Every v0.1 document is a valid v0.2 document once its version is accepted.
+Each document type has its own version. v0.3 adds `continues` to the Work Order and leaves the Work Report unchanged:
+
+| Spec | Work Order | Work Report |
+|---|---|---|
+| v0.1 | `@0.1` | `@0.1` |
+| v0.2 | `@0.2` (adds `handoff`) | `@0.2` (adds `handoff`) |
+| v0.3 | `@0.3` (adds `continues`) | `@0.2` |
+
+A v0.3 reader MUST accept Work Orders marked `@0.1`, `@0.2` and `@0.3`, and Work Reports marked `@0.1` and `@0.2`, and MUST reject any other version. A v0.3 writer marks new orders `@0.3` and new reports `@0.2`. Every earlier document is a valid v0.3 document once its version is accepted.
 
 ## 12. Planned for later versions
 

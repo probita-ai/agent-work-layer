@@ -5,6 +5,7 @@ AWL is at v0.1. The goal is a small format that many agent frameworks can share.
 ## Done
 
 - **MCP gateway** — `awl-desk gateway` enforces an order's `tools` and `budget` at every tool call and logs each call as evidence (SPEC.md §9.1).
+- **Authenticated actor** — `awl-desk serve` runs one desk over HTTP that takes each request's actor from its credential, through a pluggable `authenticate` hook (SPEC.md §10.1).
 
 ## Next (v0.2)
 

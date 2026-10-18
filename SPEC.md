@@ -231,9 +231,20 @@ The gateway cannot measure `usd` or `tokens`; those are still checked when the r
 
 ## 10. Security
 
-- A desk MUST bind `actor` to an authenticated identity in production. The reference desk trusts the `actor` argument and is for development only.
+- A desk MUST bind `actor` to an authenticated identity in production (§10.1). The reference stdio desk trusts the identity it is started with and is for development only.
 - A worker's MCP gateway SHOULD enforce `tools` and `budget` at call time, not only after the report arrives (§9.1).
 - Evidence `ref` values can point at sensitive data. Desks SHOULD apply the same access rules to evidence as to the data it points at.
+
+### 10.1 Authenticated actor
+
+`actor` is bound to an authenticated identity when the desk, not the caller, decides it:
+
+- The desk derives the actor from a credential it has verified on the same request (an OAuth 2.1 access token, an API key, a client certificate), through a hook `authenticate(request) → AgentRef`. The desk does not define how credentials are issued or stored.
+- A request whose credential is missing or invalid MUST be refused before any operation runs (HTTP 401). A valid credential that maps to no agent MUST be refused too (HTTP 403).
+- The authenticated actor is the only actor for that request. An `actor` argument naming anyone else MUST be refused with `FORBIDDEN`; naming the same agent is allowed. The role checks of §6 then run against that actor.
+- A desk SHOULD authenticate every request, not only the first one of a session, so a session never outlives its credential.
+
+For an MCP desk over Streamable HTTP, the desk is an OAuth resource server as the MCP authorization spec describes. When it accepts bearer tokens it MUST check that a token is unexpired and was issued for the desk (`aud`), SHOULD answer 401 with a `WWW-Authenticate` header naming its Protected Resource Metadata (RFC 9728), and maps the token's subject to an agent reference, either as is or through a configured map. A desk over stdio is not bound: whoever starts the process chooses its identity.
 
 ## 11. Versioning
 

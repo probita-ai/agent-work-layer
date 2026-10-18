@@ -5,6 +5,7 @@ import { parseArgs } from "node:util";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { FileStore, WorkDesk } from "agent-work-layer";
 import { runGateway } from "./gateway-cli.ts";
+import { runServe } from "./serve-cli.ts";
 import { createDeskServer } from "./index.ts";
 import { VERSION } from "./version.ts";
 
@@ -12,6 +13,7 @@ const HELP = `awl-desk ${VERSION} — Agent Work Layer desk as an MCP server on 
 
 Usage:
   awl-desk [--store <dir>] [--actor <agent-ref>]
+  awl-desk serve --keys <file> [--port <n>]       one shared desk over HTTP (see awl-desk serve --help)
   awl-desk gateway --order <id> --config <file>   (see awl-desk gateway --help)
   awl-desk --version | --help
 
@@ -20,6 +22,7 @@ Example (Claude Code):
   claude mcp add awl -e AWL_STORE="$HOME/.awl" -e AWL_ACTOR=agent:manager -- npx -y agent-work-layer-mcp`;
 
 if (process.argv[2] === "gateway") await runGateway(process.argv.slice(3));
+else if (process.argv[2] === "serve") await runServe(process.argv.slice(3));
 else await runDesk();
 
 async function runDesk() {

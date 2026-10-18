@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+`agent-work-layer-mcp`, and a fix in `agent-work-layer`.
+
+### Added
+
+- Authenticated actor (#16): `awl-desk serve --keys <file>` runs one shared desk over MCP Streamable HTTP. Every request needs `Authorization: Bearer <key>`; the key decides the actor, and an `actor` argument naming anyone else gets `FORBIDDEN`. Requests without a valid key get 401. In code: `createDeskHttpHandler({ desk, authenticate })`, where `authenticate(request)` returns the agent ref or throws an `AuthError` (401, or 403). Two example authenticators: `apiKeyAuth` (a static key → agent map) and `bearerAuth` (OAuth 2.1 access tokens: checks `exp` and `aud`, maps `sub` to an agent ref, advertises `resource_metadata` in 401 challenges). The handler can serve Protected Resource Metadata (RFC 9728).
+- SPEC.md §10.1: what binding `actor` to an authenticated identity means, and how an MCP desk does it.
+
+Stdio mode is unchanged.
+
+### Fixed
+
+- `agent-work-layer`: `FileStore` runs writes to one order one at a time within a process, so concurrent transitions get `CONFLICT` instead of overwriting each other's state and events, and temporary files get unique names. Across processes the check stays best-effort; use `SqliteStore` for an atomic one.
+
 ## 0.4.1 — 2026-10-14
 
 `agent-work-layer-mcp` alone (`agent-work-layer` stays at 0.4.0).

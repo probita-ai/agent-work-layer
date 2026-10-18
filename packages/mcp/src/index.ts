@@ -7,12 +7,15 @@ import { VERSION } from "./version.ts";
 
 export { createGateway, USAGE_TOOL } from "./gateway.ts";
 export type { CallRecord, Gateway, GatewayOptions, RefusalCode, Usage } from "./gateway.ts";
+export { AuthError, apiKeyAuth, bearerAuth, bearerToken, createDeskHttpHandler, resourceMetadataUrl } from "./http.ts";
+export type { Authenticate, BearerAuthOptions, DeskHttpOptions, ProtectedResourceMetadata, TokenClaims } from "./http.ts";
 
 export interface DeskServerOptions {
   desk: WorkDesk;
   /**
    * Fixes who this server acts as. When set, tools act as this identity and refuse any
-   * other `actor` argument, so a worker session cannot approve its own work.
+   * other `actor` argument, so a worker session cannot approve its own work. Over HTTP,
+   * `createDeskHttpHandler` sets it from the authenticated identity of each request.
    */
   actor?: string;
   name?: string;

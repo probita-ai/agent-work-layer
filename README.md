@@ -238,17 +238,17 @@ class PostgresStore implements DeskStore {
 
 ## Production notes
 
-The desk trusts the `actor` it is given. In production, derive the actor from authentication, not from tool arguments. For real-time enforcement, run the MCP gateway (`npx -y agent-work-layer-mcp gateway`), which checks `tools` and `budget` at each tool call, not only when the report arrives. See [SPEC.md §9.1](SPEC.md#91-mcp-gateway) and [§10](SPEC.md#10-security).
+A stdio desk trusts the `actor` it is started with. In production, run one desk over HTTP that takes the actor from each request's credential: `npx -y agent-work-layer-mcp serve --keys keys.json`, or `createDeskHttpHandler` with your own `authenticate` hook (OAuth 2.1 bearer tokens, API keys, mTLS). See the [MCP package README](packages/mcp/README.md#shared-desk-over-http). For real-time enforcement, run the MCP gateway (`npx -y agent-work-layer-mcp gateway`), which checks `tools` and `budget` at each tool call, not only when the report arrives. See [SPEC.md §9.1](SPEC.md#91-mcp-gateway) and [§10](SPEC.md#10-security).
 
-## Planned: authentication and the Delegation Pass
+## Authenticated actor
 
-Not built yet. These two changes close the gap described above, and contributions are welcome.
+With stdio, each agent runs its own desk and declares its own `actor`, so a worker could start one as its manager. Over HTTP, every agent connects to one desk, which takes the actor from the request's credential through a pluggable `authenticate(request)` hook. Teams plug in what they already use: OAuth 2.1 bearer tokens, API keys or mTLS. An `actor` argument naming anyone else is refused ([#16](https://github.com/probita-ai/agent-work-layer/issues/16), [SPEC.md §10.1](SPEC.md#101-authenticated-actor)).
 
-### Authenticated actor ([#16](https://github.com/probita-ai/agent-work-layer/issues/16))
+<p align="center"><img src="docs/authenticated-actor.svg" alt="With stdio, a worker can start its own desk with --actor agent:manager and approve its own report. Over HTTP, agents send a credential to one desk, authenticate(request) maps it to an agent ref before the role check, and a spoofed actor argument is refused" width="760"></p>
 
-Today each agent runs its own desk and declares its own `actor`, so a worker can act as its manager. The plan is one desk over HTTP that takes the actor from the request's credential, through a pluggable `authenticate(request)` hook. Teams plug in what they already use: OAuth 2.1 bearer tokens, API keys or mTLS. An `actor` argument naming anyone else is refused.
+## Planned: the Delegation Pass
 
-<p align="center"><img src="docs/authenticated-actor.svg" alt="Today, a worker starts its own desk with --actor agent:manager and can approve its own report. Planned: agents send a credential to one desk over HTTP, authenticate(request) maps it to an agent ref before the role check, and a spoofed actor argument is refused" width="760"></p>
+Not built yet; contributions are welcome.
 
 ### Delegation Pass ([#17](https://github.com/probita-ai/agent-work-layer/issues/17))
 

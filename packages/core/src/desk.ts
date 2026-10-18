@@ -2,6 +2,8 @@
 import { randomUUID } from "node:crypto";
 import { AwlError } from "./errors.ts";
 import { isTerminal, nextState, ROLE_FOR } from "./lifecycle.ts";
+import { signPass } from "./pass.ts";
+import type { PassKey } from "./pass.ts";
 import { MemoryStore } from "./store.ts";
 import type { DeskStore } from "./store.ts";
 import { hasInvalid, validateChildOrder, validateOrder, validateReport } from "./validate.ts";
@@ -20,6 +22,21 @@ export interface DeskOptions {
   newId?: () => string;
   /** Called after every recorded event, once it is stored. */
   onEvent?: (event: WorkEvent, record: OrderRecord) => void;
+  /**
+   * Issue Delegation Passes (SPEC.md §10.2): the desk signs a pass for the worker each time an
+   * order enters `working`, and `issuePass` renews it. Without this, the desk issues none.
+   */
+  passes?: PassOptions;
+}
+
+export interface PassOptions {
+  /** Private signing key (P-256 or Ed25519). */
+  key: PassKey;
+  /** Goes in each pass's `iss`. */
+  issuer: string;
+  /** Lifetime in seconds, capped at the order's deadline. Default 900. */
+  ttlSeconds?: number;
+  kid?: string;
 }
 
 export interface ListFilter {
@@ -53,12 +70,19 @@ export class WorkDesk {
   readonly #clock: () => Date;
   readonly #newId: () => string;
   readonly #onEvent?: DeskOptions["onEvent"];
+  readonly #passes?: PassOptions;
 
   constructor(options: DeskOptions = {}) {
     this.store = options.store ?? new MemoryStore();
     this.#clock = options.clock ?? (() => new Date());
     this.#newId = options.newId ?? (() => `wo_${randomUUID().replace(/-/g, "").slice(0, 16)}`);
     this.#onEvent = options.onEvent;
+    this.#passes = options.passes;
+  }
+
+  /** True when this desk signs Delegation Passes. */
+  get issuesPasses(): boolean {
+    return this.#passes !== undefined;
   }
 
   // ---- reads ----------------------------------------------------------------
@@ -155,6 +179,21 @@ export class WorkDesk {
   }
 
   /**
+   * Signs a fresh Delegation Pass for the order's worker while the order is `working`, replacing
+   * the current one. Workers call it before the current pass expires. Records no event.
+   */
+  async issuePass(id: string, actor: AgentRef): Promise<string> {
+    requireActor(actor);
+    if (!this.#passes) throw new AwlError("BAD_REQUEST", "this desk does not issue passes");
+    const record = await this.#mutate(id, async (rec) => {
+      if (actor !== rec.order.to) throw new AwlError("FORBIDDEN", `only the order's worker can get its pass`);
+      if (rec.state !== "working") throw new AwlError("INVALID_TRANSITION", `no pass for an order that is ${rec.state}`);
+      rec.pass = await this.#sign(rec);
+    });
+    return record.pass!;
+  }
+
+  /**
    * Records a report. Invalid reports throw VALIDATION_FAILED and change nothing.
    * Reports over budget or past the deadline are kept and move the order to `expired`.
    * An `accepted` order is started automatically.
@@ -197,6 +236,17 @@ export class WorkDesk {
 
   #now() {
     return this.#clock().toISOString();
+  }
+
+  #sign(record: OrderRecord): Promise<string> {
+    const { key, issuer, ttlSeconds, kid } = this.#passes!;
+    return signPass(record.order, key, { issuer, ttlSeconds, kid, attempt: record.reports.length + 1, now: this.#clock() });
+  }
+
+  /** A pass is issued on entering `working` and dropped on leaving it; cancel or expiry just stops new ones. */
+  async #syncPass(record: OrderRecord, before: State) {
+    if (record.state !== "working") delete record.pass;
+    else if (this.#passes && before !== "working") record.pass = await this.#sign(record);
   }
 
   #emit(event: WorkEvent, record: OrderRecord) {
@@ -243,10 +293,12 @@ export class WorkDesk {
   }
 
   /** Reads, applies `change`, and stores with an optimistic-concurrency check. */
-  async #mutate(id: string, change: (record: OrderRecord) => void): Promise<OrderRecord> {
+  async #mutate(id: string, change: (record: OrderRecord) => void | Promise<void>): Promise<OrderRecord> {
     const record = await this.get(id);
     const expected = lastSeq(record);
-    change(record);
+    const before = record.state;
+    await change(record);
+    await this.#syncPass(record, before);
     await this.store.update(record, expected);
     return record;
   }
@@ -256,6 +308,7 @@ export class WorkDesk {
     if (isTerminal(record.state) || this.#clock().getTime() <= Date.parse(record.order.deadline)) return record;
     const expected = lastSeq(record);
     const event = this.#record(record, "desk", "expire", "expired", "deadline passed");
+    delete record.pass;
     try {
       await this.store.update(record, expected);
     } catch (e) {

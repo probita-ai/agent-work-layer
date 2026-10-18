@@ -2,9 +2,16 @@
 
 ## Unreleased
 
-`agent-work-layer-mcp`, and a fix in `agent-work-layer`.
+Both packages.
 
 ### Added
+
+- Delegation Pass (#17), SPEC.md §10.2: an order's authority as a signed JWT (`typ` `awl-pass+jwt`, ES256 or EdDSA) with `iss`, `sub`, `awl_order`, `awl_parent`, `awl_tools`, `awl_budget`, `awl_deadline`, `awl_attempt`, `iat`, `exp` and `jti`.
+  - `agent-work-layer`: `signPass(order, key, options)` and `verifyPass(token, keys, options)`, with WebCrypto only, so they are also in `agent-work-layer/validate`. `verifyPass` checks signature, type, lifetime and, when asked, issuer, worker and order; with `parent` it rejects a pass that is wider than its parent's (C1–C3) or names another parent. Keys are JWKs or WebCrypto keys from the caller. `decodePass` reads claims without checking them.
+  - `WorkDesk({ passes: { key, issuer } })` signs a pass (15 minutes, never past the deadline) each time an order enters `working`, keeps it on `record.pass`, and drops it when the order leaves `working`. `desk.issuePass(id, worker)` renews it.
+  - `agent-work-layer-mcp`: `awl-desk serve --pass-key <file> --issuer <iss>`. `start_work_order` and `get_work_order` return the pass to the order's worker only, and `renew_work_pass` renews it.
+  - Gateway: `--pass-keys <file>` (`passKeys` in code) enforces a pass instead of reading the desk's store. Each call needs a valid pass for the order and worker, from `--pass-file`, `AWL_PASS` or the call's `_meta["awl/pass"]`, and is refused with `PASS_INVALID` otherwise. Tools and `tool_calls` come from the pass.
+  - Gateway call records and result `_meta` carry the authority each call ran under: `order_id`, `attempt` and the pass's `jti`.
 
 - Authenticated actor (#16): `awl-desk serve --keys <file>` runs one shared desk over MCP Streamable HTTP. Every request needs `Authorization: Bearer <key>`; the key decides the actor, and an `actor` argument naming anyone else gets `FORBIDDEN`. Requests without a valid key get 401. In code: `createDeskHttpHandler({ desk, authenticate })`, where `authenticate(request)` returns the agent ref or throws an `AuthError` (401, or 403). Two example authenticators: `apiKeyAuth` (a static key → agent map) and `bearerAuth` (OAuth 2.1 access tokens: checks `exp` and `aud`, maps `sub` to an agent ref, advertises `resource_metadata` in 401 challenges). The handler can serve Protected Resource Metadata (RFC 9728).
 - SPEC.md §10.1: what binding `actor` to an authenticated identity means, and how an MCP desk does it.

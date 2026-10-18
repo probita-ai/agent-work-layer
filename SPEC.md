@@ -224,6 +224,9 @@ A gateway is an MCP server that sits between one worker and its real MCP servers
 5. It numbers the calls that reach a tool 1, 2, 3… per order, across reworks, and names each `<server>/<tool>#<n>`. That name is the `ref` of `tool_call` evidence (§5.1), and the gateway SHOULD return it with the call's result.
 6. It SHOULD keep a log of every call, refused ones included, that survives a restart, so restarting the gateway does not reset the budget.
 7. The report's `tools_used` and its `cost.tool_calls` and `cost.seconds` SHOULD be taken from the gateway's log.
+8. Each logged call SHOULD record the authority it ran under: the order id, the report attempt in progress (`reports` + 1) and, when there is one, the `jti` of the Delegation Pass (§10.2). A resumed or reissued job can then tell which grant applied to every earlier call.
+
+A gateway MAY work from **Delegation Passes** instead of the desk's order state (§10.2). It then requires a valid pass for its order and worker on every call, and enforces the pass's `awl_tools` and `awl_budget.tool_calls` in place of rules 1–3. A pass does not say when the order was started, so `budget.seconds` is left to the report checks.
 
 A gateway MAY instead run in **observe** mode, for deployments whose own gateway or policy engine already controls access. It then applies rules 4–7 but not 1–3: it refuses nothing, and it SHOULD mark each logged call that rules 1–3 would have refused. Calls over budget or to tools the order does not allow still show up in the report, where checks R5 and R7 catch them.
 
@@ -246,6 +249,33 @@ The gateway cannot measure `usd` or `tokens`; those are still checked when the r
 
 For an MCP desk over Streamable HTTP, the desk is an OAuth resource server as the MCP authorization spec describes. When it accepts bearer tokens it MUST check that a token is unexpired and was issued for the desk (`aud`), SHOULD answer 401 with a `WWW-Authenticate` header naming its Protected Resource Metadata (RFC 9728), and maps the token's subject to an agent reference, either as is or through a configured map. A desk over stdio is not bound: whoever starts the process chooses its identity.
 
+### 10.2 Delegation Pass
+
+A Delegation Pass is an order's authority as a signed token: which tools, how much budget, until when, for which job and which worker. A gateway, a tool server or a sub-worker in another system can check a worker's authority with it, without calling the desk.
+
+A pass is a JWS in compact form (a JWT) with header `typ` `awl-pass+jwt` and `alg` `ES256` (P-256) or `EdDSA` (Ed25519). Its claims:
+
+| Claim | Value |
+|---|---|
+| `iss` | The desk that issued it |
+| `sub` | The worker: the order's `to` |
+| `awl_order` | The order's `id` |
+| `awl_parent` | The parent order's `id`, for sub-orders |
+| `awl_tools` | The order's `tools` |
+| `awl_budget` | The order's whole `budget`, not what is left of it |
+| `awl_deadline` | The order's `deadline` |
+| `awl_attempt` | The report attempt the pass was issued for: `reports` + 1 |
+| `iat`, `exp` | Issue and expiry time, in seconds since the epoch |
+| `jti` | A unique id for this pass |
+
+**Issuing.** A desk that issues passes signs one for the worker each time the order enters `working`, and on request while it stays `working`. A pass's `exp` MUST NOT be later than `awl_deadline`, and SHOULD be short (the reference desk uses 15 minutes); the worker renews it while it works. Short lifetimes are the only revocation: when an order is cancelled, expires or leaves `working`, the desk stops issuing passes for it. The desk SHOULD give a pass only to the authenticated worker (§10.1); a pass is only as trustworthy as the identity it was issued to.
+
+**Verifying.** A verifier MUST reject a pass whose signature does not verify with one of the issuer's keys, whose `typ` or `alg` is not one of the above, that has expired (at `exp` or `awl_deadline`, whichever is sooner), or whose `iat` is in the future. It SHOULD check `iss`, and that `sub` and `awl_order` are the worker and order it expects. A tool call is allowed when a pattern in `awl_tools` allows it (§4.3).
+
+**Narrowing.** A sub-order's pass names its parent in `awl_parent`. A verifier holding a pass and its parent's pass checks C1–C3 (§8) between their `awl_budget`, `awl_tools` and `awl_deadline`, and MUST reject a pass wider than its parent's or naming a different parent. A chain is verified from the top down.
+
+Key distribution, rotation and JWKS hosting are out of scope. The reference implementation is `signPass` and `verifyPass` in `agent-work-layer`, which use WebCrypto only.
+
 ## 11. Versioning
 
 `spec` carries the version. Minor versions (0.x) may add optional fields only. Readers MUST reject a major version they do not know.
@@ -254,7 +284,6 @@ A v0.2 reader MUST accept documents marked `@0.1` and `@0.2`, and MUST reject an
 
 ## 12. Planned for later versions
 
-- Delegation Pass: a signed, standalone grant of budget, tools and time.
 - Track record: an aggregate of approved reports per worker.
 - Streaming progress events while `working`.
 

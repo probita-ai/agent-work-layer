@@ -8,7 +8,7 @@
 Two ways to run it:
 
 - **stdio, for development.** Each agent session runs its own desk process. Sessions share one folder, and each is locked to the identity it is started with.
-- **HTTP, for shared use.** Every agent connects to one desk, and each request's credential decides who it acts as, so a worker cannot approve its own work. See [Shared desk over HTTP](#shared-desk-over-http).
+- **HTTP, for shared use.** Every agent connects to one desk, and each request's credential decides who it acts as, so a worker cannot approve its own work. See [Shared desk over HTTP](#shared-desk-over-http). It can also sign [Delegation Passes](#delegation-passes).
 
 Only need to validate documents or run a desk in your own code? Use [`agent-work-layer`](https://www.npmjs.com/package/agent-work-layer) on its own. It installs 7 packages instead of about 100.
 
@@ -42,7 +42,7 @@ Flags win over the environment. Installed locally, the command is `awl-desk`.
 |---|---|---|
 | `create_work_order` | manager | Issue an order: goal, criteria, budget, deadline, tools, optional `handoff` |
 | `list_work_orders` | anyone | Find orders, e.g. `to=<you>, state=offered` |
-| `get_work_order` | anyone | Order, state, latest report, findings, events |
+| `get_work_order` | anyone | Order, state, latest report, findings, events; the worker also gets its [pass](#delegation-passes) |
 | `accept_work_order` / `decline_work_order` | worker | Answer an offer |
 | `start_work_order` | worker | Begin work |
 | `submit_work_report` | worker | Report `done`, `blocked` or `failed`, with evidence and an optional `handoff` |
@@ -50,6 +50,7 @@ Flags win over the environment. Installed locally, the command is `awl-desk`.
 | `review_work_report` | manager | Approve, or send back for rework |
 | `cancel_work_order` | manager | Stop an unfinished order |
 | `wait_for_update` | anyone | Wait for the next change to an order |
+| `renew_work_pass` | worker | A fresh [Delegation Pass](#delegation-passes); listed only when the desk issues passes |
 
 When a worker fails or gets stuck, it can fill in `handoff` (decisions, what it tried, open questions, next step). The manager passes that to the next worker in a new order, so the next worker doesn't start from nothing. See [SPEC.md §4.4](https://github.com/probita-ai/agent-work-layer/blob/main/SPEC.md#44-handoff).
 
@@ -82,6 +83,8 @@ claude mcp add --transport http awl http://127.0.0.1:8787/mcp --header "Authoriz
 | `--port <n>` | | `8787` | `0` picks a free port |
 | `--host <addr>` | | `127.0.0.1` | Address to listen on |
 | `--store <dir>` | `AWL_STORE` | `./.awl` | The desk's folder |
+| `--pass-key <file>` | | none | Private JWK to sign [Delegation Passes](#delegation-passes) with |
+| `--issuer <iss>` | | none | The passes' `iss`; required with `--pass-key` |
 
 ### Bring your own authentication
 
@@ -155,6 +158,41 @@ claude mcp add work -e AWL_STORE="$HOME/.awl" -- npx -y agent-work-layer-mcp gat
 
 The gateway cannot measure `usd` or `tokens`; the desk still checks those when the report arrives. See [SPEC.md §9.1](https://github.com/probita-ai/agent-work-layer/blob/main/SPEC.md#91-mcp-gateway).
 
+Each logged call, and each result's `_meta`, also records the authority it ran under: the order id (`awl/order`), the report attempt in progress (`awl/attempt`) and, when the desk issues passes, the pass's `jti` (`awl/jti`).
+
+## Delegation Passes
+
+A pass is the order's tools, budget and deadline signed by the desk, so a gateway or another team's system can check a worker's authority without reading the desk ([SPEC.md §10.2](https://github.com/probita-ai/agent-work-layer/blob/main/SPEC.md#102-delegation-pass)).
+
+The shared desk issues them when given a private key (a P-256 or Ed25519 JWK):
+
+```sh
+npx -y agent-work-layer-mcp serve --keys keys.json --pass-key priv.json --issuer https://desk.example.com
+```
+
+- `start_work_order` and `get_work_order` return the worker's current `pass`. Nobody else sees it.
+- A pass lasts 15 minutes, never past the deadline. `renew_work_pass` gets a fresh one while the order is `working`; a new one is also issued after an answer or a rework.
+- When the order is cancelled, expires or leaves `working`, no new passes are issued.
+
+The gateway can then work from the pass instead of the desk's store. Give it the desk's public key and the pass:
+
+```sh
+npx -y agent-work-layer-mcp gateway --order wo_123 --config upstream.json --actor agent:worker \
+  --pass-keys pub.json --pass-file pass.txt --issuer https://desk.example.com
+```
+
+- Every call needs a valid pass for this order and worker. Without one, or with one that is expired, badly signed, or for another worker, order or issuer, the call is refused with `PASS_INVALID`.
+- Tools and `tool_calls` come from the pass. `seconds` is left to the desk's report checks, since a pass doesn't say when work started.
+- `--pass-file` is read on every call, so the worker renews by writing the new pass there. `AWL_PASS` works for a fixed pass. A call's `_meta["awl/pass"]` wins over both.
+
+| Flag | Environment | Meaning |
+|---|---|---|
+| `--pass-keys <file>` | | The desk's public key: a JWK, a JWK Set or an array |
+| `--pass-file <file>` | `AWL_PASS` (the pass itself) | Where the current pass is |
+| `--issuer <iss>` | | Required `iss` |
+
+In code: `createGateway({ orderId, upstreams, actor, passKeys, pass, issuer })`, with no `desk`.
+
 ## Embed the server
 
 ```ts
@@ -185,7 +223,7 @@ Stored orders keep working. The desk reads 0.1 documents and writes 0.2.
 
 ## Security
 
-Over stdio, the desk trusts the identity it is started with: anyone who can start a desk or write to the store folder can act as any agent. Use it for development. In production, run [one desk over HTTP](#shared-desk-over-http), which takes the actor from each request's credential. See [SPEC.md §10](https://github.com/probita-ai/agent-work-layer/blob/main/SPEC.md#10-security).
+Over stdio, the desk trusts the identity it is started with: anyone who can start a desk or write to the store folder can act as any agent. Use it for development. In production, run [one desk over HTTP](#shared-desk-over-http), which takes the actor from each request's credential. Delegation Passes are bearer tokens for a worker's authority: keep them short-lived (the default), and keep the signing key on the desk only. See [SPEC.md §10](https://github.com/probita-ai/agent-work-layer/blob/main/SPEC.md#10-security).
 
 ## License
 

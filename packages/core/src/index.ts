@@ -11,10 +11,12 @@ export {
   isWorkOrder, isWorkReport, toolAllowed, patternCovered,
   workOrderSchema, workReportSchema,
 } from "./validate.ts";
+export { signPass, verifyPass, decodePass, PassError, PASS_TYP, PASS_TTL_SECONDS } from "./pass.ts";
+export type { PassClaims, PassKey, PassKeys, PassJwk, PassCryptoKey, PassErrorCode, SignPassOptions, VerifyPassOptions, VerifiedPass } from "./pass.ts";
 export { STATES, TERMINAL_STATES, ROLE_FOR, isTerminal, nextState, allowedActions } from "./lifecycle.ts";
 export type { Role } from "./lifecycle.ts";
 export { WorkDesk, summarize, lastSeq } from "./desk.ts";
-export type { DeskOptions, ListFilter, WaitOptions, SubmitResult } from "./desk.ts";
+export type { DeskOptions, PassOptions, ListFilter, WaitOptions, SubmitResult } from "./desk.ts";
 export { MemoryStore, FileStore, SqliteStore } from "./store.ts";
 export type { DeskStore } from "./store.ts";
 export { VERSION } from "./version.ts";

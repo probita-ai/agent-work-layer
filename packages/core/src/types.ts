@@ -154,6 +154,8 @@ export interface OrderRecord {
   reports: WorkReport[];
   events: WorkEvent[];
   findings: Finding[];
+  /** The worker's current Delegation Pass (SPEC.md §10.2), while the order is `working` on a desk that issues passes. */
+  pass?: string;
 }
 
 export interface OrderSummary {

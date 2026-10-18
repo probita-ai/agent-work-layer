@@ -50,7 +50,11 @@ const MOVE = { readOnlyHint: false, destructiveHint: false, idempotentHint: true
 const END = { ...MOVE, destructiveHint: true };
 const CREATE = { ...MOVE, idempotentHint: false };
 
-const view = (r: OrderRecord) => ({ ...summarize(r), order: r.order, latest_report: r.reports.at(-1) ?? null, findings: r.findings, events: r.events });
+/** The record as tools return it. The Delegation Pass is shown only to the order's worker. */
+const view = (r: OrderRecord, viewer?: string) => ({
+  ...summarize(r), order: r.order, latest_report: r.reports.at(-1) ?? null, findings: r.findings, events: r.events,
+  ...(r.pass && viewer === r.order.to ? { pass: r.pass } : {}),
+});
 
 /** Drops keys whose value is undefined so they don't reach JSON Schema validation. */
 const defined = <T extends object>(o: T): T => JSON.parse(JSON.stringify(o));
@@ -75,6 +79,9 @@ export function createDeskServer({ desk, actor: sessionActor, name = "awl-work-d
     if (!actor) throw new AwlError("BAD_REQUEST", 'no actor: pass "actor" or start the desk with an identity');
     return actor;
   };
+
+  /** Who is reading, for read tools where an actor is optional. Same identity rules as `who`. */
+  const viewer = (arg?: string): string | undefined => (arg === undefined ? sessionActor : who(arg));
 
   server.registerTool(
     "create_work_order",
@@ -121,14 +128,18 @@ export function createDeskServer({ desk, actor: sessionActor, name = "awl-work-d
 
   server.registerTool(
     "get_work_order",
-    { annotations: READ, description: "Full order, current state, latest report, check findings and event log.", inputSchema: { id: idArg } },
-    async ({ id }) => respond(async () => view(await desk.get(id))),
+    {
+      annotations: READ,
+      description: "Full order, current state, latest report, check findings and event log. The order's worker also gets its Delegation Pass, if the desk issues them.",
+      inputSchema: { id: idArg, actor: actorArg },
+    },
+    async ({ id, actor }) => respond(async () => view(await desk.get(id), viewer(actor))),
   );
 
   server.registerTool(
     "accept_work_order",
     { annotations: MOVE, description: "Worker accepts an offered order.", inputSchema: { id: idArg, actor: actorArg } },
-    async ({ id, actor }) => respond(async () => view(await desk.accept(id, who(actor)))),
+    async ({ id, actor }) => respond(async () => view(await desk.accept(id, who(actor)), viewer(actor))),
   );
 
   server.registerTool(
@@ -140,7 +151,7 @@ export function createDeskServer({ desk, actor: sessionActor, name = "awl-work-d
   server.registerTool(
     "start_work_order",
     { annotations: MOVE, description: "Worker starts an accepted order.", inputSchema: { id: idArg, actor: actorArg } },
-    async ({ id, actor }) => respond(async () => view(await desk.start(id, who(actor)))),
+    async ({ id, actor }) => respond(async () => view(await desk.start(id, who(actor)), viewer(actor))),
   );
 
   server.registerTool(
@@ -205,6 +216,20 @@ export function createDeskServer({ desk, actor: sessionActor, name = "awl-work-d
     { annotations: END, description: "Manager cancels an order that is not finished.", inputSchema: { id: idArg, actor: actorArg, reason: z.string().optional() } },
     async ({ id, actor, reason }) => respond(async () => view(await desk.cancel(id, who(actor), reason))),
   );
+
+  if (desk.issuesPasses) {
+    server.registerTool(
+      "renew_work_pass",
+      {
+        annotations: { ...MOVE, idempotentHint: false },
+        description:
+          "Worker gets a fresh Delegation Pass for a working order: a signed grant of its tools, budget and deadline that " +
+          "gateways and other systems verify without the desk. Passes are short-lived; renew before one expires.",
+        inputSchema: { id: idArg, actor: actorArg },
+      },
+      async ({ id, actor }) => respond(async () => ({ id, pass: await desk.issuePass(id, who(actor)) })),
+    );
+  }
 
   server.registerTool(
     "wait_for_update",

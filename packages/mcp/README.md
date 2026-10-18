@@ -40,8 +40,8 @@ Flags win over the environment. Installed locally, the command is `awl-desk`.
 
 | Tool | Who | What it does |
 |---|---|---|
-| `create_work_order` | manager | Issue an order: goal, criteria, budget, deadline, tools, optional `handoff` |
-| `list_work_orders` | anyone | Find orders, e.g. `to=<you>, state=offered` |
+| `create_work_order` | manager | Issue an order: goal, criteria, budget, deadline, tools, optional `handoff`, and `continues` to reissue a finished order |
+| `list_work_orders` | anyone | Find orders, e.g. `to=<you>, state=offered`, or `continues=<id>` to follow a reissued job |
 | `get_work_order` | anyone | Order, state, latest report, findings, events; the worker also gets its [pass](#delegation-passes) |
 | `accept_work_order` / `decline_work_order` | worker | Answer an offer |
 | `start_work_order` | worker | Begin work |

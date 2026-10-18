@@ -18,10 +18,10 @@ from jsonschema import Draft202012Validator, FormatChecker, ValidationError
 from jsonschema.exceptions import SchemaError
 from jsonschema.validators import extend
 
-ORDER_SPEC = "awl/work-order@0.2"
+ORDER_SPEC = "awl/work-order@0.3"
 REPORT_SPEC = "awl/work-report@0.2"
 #: Every spec version this package reads (SPEC.md §11).
-ORDER_SPECS = ("awl/work-order@0.1", ORDER_SPEC)
+ORDER_SPECS = ("awl/work-order@0.1", "awl/work-order@0.2", ORDER_SPEC)
 REPORT_SPECS = ("awl/work-report@0.1", REPORT_SPEC)
 #: Budget and cost units (SPEC.md §4.2).
 UNITS = ("usd", "tokens", "tool_calls", "seconds")

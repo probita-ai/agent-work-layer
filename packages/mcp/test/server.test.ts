@@ -187,6 +187,21 @@ describe("handoff over MCP", () => {
     assert.deepEqual(next.body.order.handoff, handoff);
   });
 
+  test("a reissued order continues the cancelled one, and the chain can be listed", async () => {
+    const { manager, worker } = await pair();
+    const first = (await manager("create_work_order", { ...orderInput() })).body.id;
+    await worker("accept_work_order", { id: first });
+    await worker("submit_work_report", { id: first, ...reportInput({ status: "failed", evidence: [], error: "Out of memory" }), handoff });
+    assert.equal((await manager("create_work_order", { ...orderInput({ to: STRANGER }), continues: first })).body.code, "INVALID_TRANSITION");
+
+    await manager("cancel_work_order", { id: first, reason: "reissuing" });
+    const next = await manager("create_work_order", { ...orderInput({ to: STRANGER }), continues: first, handoff });
+    assert.ok(next.ok, JSON.stringify(next.body));
+    assert.equal(next.body.order.continues, first);
+    const chain = (await manager("list_work_orders", { continues: first })).body;
+    assert.deepEqual(chain.map((s: { id: string; continues: string }) => [s.id, s.continues]), [[next.body.id, first]]);
+  });
+
   test("rejects unknown handoff fields", async () => {
     const { manager } = await pair();
     const r = await manager("create_work_order", { ...orderInput(), handoff: { notes: "x" } }).catch((e) => ({ ok: false, body: String(e) }));

@@ -40,7 +40,7 @@ def test_builds_an_order_in_python():
     o = build_order()
     doc = o.to_dict()
     assert doc["from"] == "agent:manager"
-    assert doc["spec"] == "awl/work-order@0.2"
+    assert doc["spec"] == "awl/work-order@0.3"
     assert doc["created_at"] == "2026-01-01T09:00:00.000Z"
     assert doc["deadline"] == "2026-01-01T11:00:00.000Z"
     assert doc["budget"] == {"usd": 2, "tool_calls": 20}
@@ -96,3 +96,19 @@ def test_report_model_rejects_unknown_evidence_type():
 def test_packaged_schemas_match_the_repository():
     for name, packaged in [("work-order.schema.json", work_order_schema), ("work-report.schema.json", work_report_schema)]:
         assert packaged == json.loads((REPO / "schemas" / name).read_text("utf-8")), f"copy schemas/{name} into the package"
+
+
+def test_an_order_can_continue_an_earlier_one():
+    o = build_order(continues="wo_41")
+    doc = o.to_dict()
+    assert doc["continues"] == "wo_41"
+    assert validate_order(doc) == []
+    assert WorkOrder.model_validate(doc).continues == "wo_41"
+    assert [f.rule for f in validate_order({**doc, "continues": ""})] == ["O1"]
+
+
+def test_reads_every_order_version():
+    doc = build_order().to_dict()
+    for spec in ("awl/work-order@0.1", "awl/work-order@0.2", "awl/work-order@0.3"):
+        assert validate_order({**doc, "spec": spec}) == []
+    assert [f.rule for f in validate_order({**doc, "spec": "awl/work-order@0.4"})] == ["O1"]

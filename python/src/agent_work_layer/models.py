@@ -100,7 +100,7 @@ class Handoff(_Part):
 
 
 class WorkOrder(_Document):
-    spec: Literal["awl/work-order@0.1", "awl/work-order@0.2"] = ORDER_SPEC
+    spec: Literal["awl/work-order@0.1", "awl/work-order@0.2", "awl/work-order@0.3"] = ORDER_SPEC
     id: Annotated[str, Field(min_length=1, max_length=128)]
     created_at: Timestamp
     from_: AgentRef = Field(alias="from")
@@ -117,6 +117,8 @@ class WorkOrder(_Document):
     handoff: Optional[Handoff] = None
     output_schema: Optional[Dict[str, Any]] = None
     parent_id: Optional[Text] = None
+    #: The order this one picks up from, after it stopped (SPEC.md §4.5). Not a sub-order.
+    continues: Optional[Text] = None
     metadata: Optional[Dict[str, Any]] = None
 
     @model_validator(mode="after")

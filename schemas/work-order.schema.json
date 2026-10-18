@@ -1,11 +1,11 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://awl.dev/schemas/work-order-0.2.json",
-  "title": "AWL Work Order v0.2",
+  "$id": "https://awl.dev/schemas/work-order-0.3.json",
+  "title": "AWL Work Order v0.3",
   "type": "object",
   "required": ["spec", "id", "created_at", "from", "to", "goal", "criteria", "budget", "deadline", "tools"],
   "properties": {
-    "spec": { "enum": ["awl/work-order@0.1", "awl/work-order@0.2"] },
+    "spec": { "enum": ["awl/work-order@0.1", "awl/work-order@0.2", "awl/work-order@0.3"] },
     "id": { "type": "string", "minLength": 1, "maxLength": 128 },
     "created_at": { "type": "string", "format": "date-time" },
     "from": { "$ref": "#/$defs/agentRef" },
@@ -41,6 +41,7 @@
     "handoff": { "$ref": "#/$defs/handoff" },
     "output_schema": { "type": "object" },
     "parent_id": { "type": "string", "minLength": 1 },
+    "continues": { "type": "string", "minLength": 1 },
     "metadata": { "type": "object" }
   },
   "patternProperties": { "^x-": {} },

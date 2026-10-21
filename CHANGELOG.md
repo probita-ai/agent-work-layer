@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Conformance vectors (#4) in `conformance/`: JSON documents with the findings a validator must report, at least one passing and one failing vector for every rule (O1–O4, R1–R12, C1–C3). `conformance/README.md` describes the format and how findings are matched. The TypeScript and Python test suites run every vector.
+
 ## 0.5.0 — 2026-10-17
 
 Both packages: `agent-work-layer` 0.5.0 and `agent-work-layer-mcp` 0.5.0. Spec v0.3: Work Orders are now written as `awl/work-order@0.3`; Work Reports stay `@0.2`.

@@ -135,6 +135,8 @@ if (hasInvalid(findings)) reject(findings);
 
 Every finding carries the rule id from [SPEC.md §7](SPEC.md#7-checks). `invalid` findings reject a document. `limit` findings (over budget, past deadline) are recorded and expire the order.
 
+Writing a validator in another language? Run it against the JSON test vectors in [conformance/](conformance/): documents with the findings each rule must report.
+
 The JSON Schemas are exported too: `workOrderSchema`, `workReportSchema`, or `agent-work-layer/schemas/work-order.schema.json`.
 
 `agent-work-layer/validate` has the same checks, types and schemas without the desk. It imports nothing from Node, so it runs in browsers, Deno and Bun. (Cloudflare Workers are not supported: the validator compiles schemas to code at runtime, which Workers block.)

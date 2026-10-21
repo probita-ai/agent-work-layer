@@ -1,0 +1,187 @@
+{
+  "rule": "C3",
+  "check": "child",
+  "description": "The child's deadline ≤ the parent's deadline.",
+  "vectors": [
+    {
+      "name": "accepts an earlier deadline",
+      "parent": {
+        "spec": "awl/work-order@0.3",
+        "id": "wo_1",
+        "created_at": "2026-01-01T09:00:00Z",
+        "from": "agent:manager",
+        "to": "agent:worker",
+        "goal": "Summarize the risk factors in the annual report",
+        "criteria": [
+          {
+            "id": "c1",
+            "text": "Lists three risk factors with quotes"
+          },
+          {
+            "id": "c2",
+            "text": "States total debt and fiscal year"
+          }
+        ],
+        "budget": {
+          "usd": 2,
+          "tool_calls": 20
+        },
+        "deadline": "2026-01-01T12:00:00Z",
+        "tools": [
+          "filings/*",
+          "calc/ratio"
+        ]
+      },
+      "order": {
+        "spec": "awl/work-order@0.3",
+        "id": "wo_child",
+        "created_at": "2026-01-01T09:00:00Z",
+        "from": "agent:manager",
+        "to": "agent:worker",
+        "goal": "Summarize the risk factors in the annual report",
+        "criteria": [
+          {
+            "id": "c1",
+            "text": "Lists three risk factors with quotes"
+          },
+          {
+            "id": "c2",
+            "text": "States total debt and fiscal year"
+          }
+        ],
+        "budget": {
+          "usd": 1,
+          "tool_calls": 5
+        },
+        "deadline": "2026-01-01T11:00:00Z",
+        "tools": [
+          "filings/search"
+        ],
+        "parent_id": "wo_1"
+      },
+      "expect": []
+    },
+    {
+      "name": "accepts the parent's deadline",
+      "parent": {
+        "spec": "awl/work-order@0.3",
+        "id": "wo_1",
+        "created_at": "2026-01-01T09:00:00Z",
+        "from": "agent:manager",
+        "to": "agent:worker",
+        "goal": "Summarize the risk factors in the annual report",
+        "criteria": [
+          {
+            "id": "c1",
+            "text": "Lists three risk factors with quotes"
+          },
+          {
+            "id": "c2",
+            "text": "States total debt and fiscal year"
+          }
+        ],
+        "budget": {
+          "usd": 2,
+          "tool_calls": 20
+        },
+        "deadline": "2026-01-01T12:00:00Z",
+        "tools": [
+          "filings/*",
+          "calc/ratio"
+        ]
+      },
+      "order": {
+        "spec": "awl/work-order@0.3",
+        "id": "wo_child",
+        "created_at": "2026-01-01T09:00:00Z",
+        "from": "agent:manager",
+        "to": "agent:worker",
+        "goal": "Summarize the risk factors in the annual report",
+        "criteria": [
+          {
+            "id": "c1",
+            "text": "Lists three risk factors with quotes"
+          },
+          {
+            "id": "c2",
+            "text": "States total debt and fiscal year"
+          }
+        ],
+        "budget": {
+          "usd": 1,
+          "tool_calls": 5
+        },
+        "deadline": "2026-01-01T12:00:00Z",
+        "tools": [
+          "filings/search"
+        ],
+        "parent_id": "wo_1"
+      },
+      "expect": []
+    },
+    {
+      "name": "rejects a later deadline",
+      "parent": {
+        "spec": "awl/work-order@0.3",
+        "id": "wo_1",
+        "created_at": "2026-01-01T09:00:00Z",
+        "from": "agent:manager",
+        "to": "agent:worker",
+        "goal": "Summarize the risk factors in the annual report",
+        "criteria": [
+          {
+            "id": "c1",
+            "text": "Lists three risk factors with quotes"
+          },
+          {
+            "id": "c2",
+            "text": "States total debt and fiscal year"
+          }
+        ],
+        "budget": {
+          "usd": 2,
+          "tool_calls": 20
+        },
+        "deadline": "2026-01-01T12:00:00Z",
+        "tools": [
+          "filings/*",
+          "calc/ratio"
+        ]
+      },
+      "order": {
+        "spec": "awl/work-order@0.3",
+        "id": "wo_child",
+        "created_at": "2026-01-01T09:00:00Z",
+        "from": "agent:manager",
+        "to": "agent:worker",
+        "goal": "Summarize the risk factors in the annual report",
+        "criteria": [
+          {
+            "id": "c1",
+            "text": "Lists three risk factors with quotes"
+          },
+          {
+            "id": "c2",
+            "text": "States total debt and fiscal year"
+          }
+        ],
+        "budget": {
+          "usd": 1,
+          "tool_calls": 5
+        },
+        "deadline": "2026-01-01T12:00:01Z",
+        "tools": [
+          "filings/search"
+        ],
+        "parent_id": "wo_1"
+      },
+      "expect": [
+        {
+          "rule": "C3",
+          "kind": "invalid",
+          "path": "/deadline"
+        }
+      ]
+    }
+  ]
+}

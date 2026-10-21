@@ -18,7 +18,7 @@ Thanks for helping. AWL has two parts, and they change in different ways:
 
 1. Open an issue with the **Spec proposal** template. Describe the problem before the solution.
 2. Discuss it there. Small clarifications can go straight to a PR.
-3. A spec PR must update, in the same PR: `SPEC.md`, the JSON Schemas (then run `npm run generate`), the validator, tests for each new rule, and `CHANGELOG.md`.
+3. A spec PR must update, in the same PR: `SPEC.md`, the JSON Schemas (then run `npm run generate`), the validator, tests for each new rule, the [conformance vectors](conformance/) (a new rule gets its own file), and `CHANGELOG.md`.
 
 Compatibility rules (SPEC.md §11):
 
@@ -48,7 +48,7 @@ python -m venv .venv && .venv/bin/pip install -e ".[test]"
 .venv/bin/pytest
 ```
 
-A rule change goes into both implementations, with the same rule ids, kinds and paths. After editing `schemas/*.json`, copy them into `python/src/agent_work_layer/schemas/`; a test fails if you forget.
+A rule change goes into both implementations, with the same rule ids, kinds and paths; both run the vectors in [`conformance/`](conformance/), so a mismatch fails a test. After editing `schemas/*.json`, copy them into `python/src/agent_work_layer/schemas/`; a test fails if you forget.
 
 Guidelines:
 

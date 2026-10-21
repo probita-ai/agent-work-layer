@@ -8,6 +8,7 @@ AWL is at spec v0.3 (packages 0.5). The goal is a small format that many agent f
 - **Authenticated actor** — `awl-desk serve` runs one desk over HTTP that takes each request's actor from its credential, through a pluggable `authenticate` hook (SPEC.md §10.1).
 - **Delegation Pass** — the desk signs an order's tools, budget and deadline into a short-lived JWT that gateways and other systems verify without the desk, with narrowing checked across sub-orders (SPEC.md §10.2).
 - **Continuation** — `continues` links a reissued order to the finished one it picks up from, so a job's chain of orders is its full history (SPEC.md §4.5).
+- **Conformance vectors** — JSON documents with the findings each check must report, at least one passing and one failing per rule, in [`conformance/`](conformance/). The TypeScript and Python validators both pass them.
 
 ## Next
 
@@ -18,7 +19,6 @@ AWL is at spec v0.3 (packages 0.5). The goal is a small format that many agent f
 
 - Python SDK: models and validation are in [`python/`](python/). The desk and an MCP server in Python. *help wanted*
 - Database stores: PostgreSQL, SQLite, Redis. *help wanted*
-- Shared conformance test vectors (JSON files of documents with their expected findings) so every implementation can prove it matches the spec.
 
 ## Integrations
 

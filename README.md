@@ -22,7 +22,7 @@ Agent Cards say who an agent is. A2A carries messages between agents. MCP connec
 
 <p align="center"><img src="docs/fields.svg" alt="Each Work Report field answers a Work Order field: evidence proves criteria, cost stays within budget, tools used stay within allowed tools" width="760"></p>
 
-More diagrams: [message sequence](docs/sequence.svg) · [lifecycle](docs/lifecycle.svg) · [delegation](docs/delegation.svg) · [handoff](docs/handoff.svg) · [authenticated actor](docs/authenticated-actor.svg) · [Delegation Pass](docs/delegation-pass.svg)
+More diagrams: [message sequence](docs/sequence.svg) · [lifecycle](docs/lifecycle.svg) · [delegation](docs/delegation.svg) · [handoff](docs/handoff.svg) · [authenticated actor](docs/authenticated-actor.svg) · [Delegation Pass](docs/delegation-pass.svg) · [JWS vs JWT](docs/jws-vs-jwt.svg)
 
 ## Install
 
@@ -276,6 +276,7 @@ When a worker starts, the desk signs a short-lived pass (a JWS) carrying the ord
 - A pass lasts 15 minutes by default, never past the deadline. The desk issues a new one each time the order enters `working`, and the worker renews it while it works.
 - It carries the order's whole budget; the gateway tracks what has been spent.
 - Cancelling or expiring the order stops new passes. There is no other revocation, which is why passes are short.
+- A pass is a JWS whose payload is a claims set, which makes it a JWT too. [This diagram](docs/jws-vs-jwt.svg) shows a pass's three parts and the order to verify them in.
 
 ```ts
 import { WorkDesk, verifyPass } from "agent-work-layer";

@@ -1,0 +1,100 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 452" width="1000" height="452" role="img" aria-label="JWS versus JWT. A Delegation Pass on the wire is three base64url parts joined by dots: a header naming the algorithm and type, a payload, and a signature over the first two made with the desk's private key. Because the payload is a JSON claims set, the JWS is also a JWT. Below, the JOSE family: JWS is signed, JWE is encrypted, and a JWT is a claims set carried in either one. On the right, the order to verify a pass in: type and algorithm on an allow-list, signature with the issuer's public key, expiry and issue time, then issuer, worker and order, and only then the claims.">
+<style>
+svg{--bg:#f4f5f8;--surface:#ffffff;--fg:#171b24;--muted:#5a6376;--line:#c8cdd8;--accent:#2b57c4;--new:#c97a06;--new-bg:#fff4df;--ok:#1d8a59;
+--sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;--mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+@media (prefers-color-scheme: dark){svg{--bg:#0f1218;--surface:#171b24;--fg:#e6e9f0;--muted:#98a1b3;--line:#353c4a;--accent:#84a6ff;--new:#f0a83c;--new-bg:#2b2214;--ok:#4fc58c}}
+.frame{fill:var(--bg)}
+
+.bx { fill: var(--surface); stroke: var(--line); stroke-width: 1.3; }
+.bx-h { fill: var(--surface); stroke: var(--accent); stroke-width: 1.8; }
+.bx-p { fill: var(--new-bg); stroke: var(--new); stroke-width: 1.8; }
+.bx-s { fill: var(--surface); stroke: var(--ok); stroke-width: 1.8; }
+.bx-set { fill: none; stroke: var(--muted); stroke-width: 1.2; stroke-dasharray: 4 3; }
+.ln-d { stroke: var(--muted); stroke-width: 1.3; fill: none; stroke-dasharray: 4 3; }
+.sep { stroke: var(--line); stroke-width: 1; }
+.mk-g { fill: var(--muted); }
+.num { fill: var(--new-bg); stroke: var(--new); stroke-width: 1.4; }
+.t { fill: var(--fg); font: 13px var(--sans); }
+.tb { font-weight: 600; }
+.tl { font-size: 15px; }
+.ts { fill: var(--muted); font: 12px var(--sans); }
+.tm { fill: var(--muted); font: 500 11px var(--mono); letter-spacing: .06em; }
+.tf { fill: var(--fg); font: 12.5px var(--mono); white-space: pre; }
+.dotc { fill: var(--fg); font: 700 22px var(--mono); }
+.t-acc { fill: var(--accent); } .t-new { fill: var(--new); } .t-ok { fill: var(--ok); }
+</style>
+<defs>
+  <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk-g"/></marker>
+</defs>
+<rect class="frame" x="0" y="0" width="1000" height="452" rx="12"/>
+
+<!-- The token on the wire -->
+<text class="tm" x="24" y="34">A DELEGATION PASS, ON THE WIRE</text>
+<text class="ts" x="976" y="34" text-anchor="end">header . payload . signature  —  each part base64url-encoded</text>
+
+<rect class="bx-h" x="24" y="46" width="280" height="38" rx="7"/>
+<text class="tf t-acc" x="164" y="70" text-anchor="middle">eyJhbGciOiJFUzI1NiIsInR5cCI6…</text>
+<text class="dotc" x="312" y="73" text-anchor="middle">.</text>
+<rect class="bx-p" x="320" y="46" width="360" height="38" rx="7"/>
+<text class="tf t-new" x="500" y="70" text-anchor="middle">eyJpc3MiOiJodHRwczovL2Rlc2suZXhhbXBs…</text>
+<text class="dotc" x="688" y="73" text-anchor="middle">.</text>
+<rect class="bx-s" x="696" y="46" width="280" height="38" rx="7"/>
+<text class="tf t-ok" x="836" y="70" text-anchor="middle">1RNz1CnMmYz5J_IMfUff_GBX6LKO…</text>
+
+<line class="ln-d" x1="164" y1="86" x2="164" y2="106" marker-end="url(#ah)"/>
+<line class="ln-d" x1="500" y1="86" x2="500" y2="106" marker-end="url(#ah)"/>
+<line class="ln-d" x1="836" y1="86" x2="836" y2="106" marker-end="url(#ah)"/>
+
+<!-- Decoded -->
+<rect class="bx" x="24" y="108" width="280" height="112" rx="8"/>
+<text class="tm t-acc" x="40" y="130">HEADER · JSON</text>
+<text class="tf" x="40" y="154">{ "alg": "ES256",</text>
+<text class="tf" x="40" y="172">  "typ": "awl-pass+jwt",</text>
+<text class="tf" x="40" y="190">  "kid": "desk-2026-10" }</text>
+<text class="ts" x="40" y="210">how to check it, and what it is</text>
+
+<rect class="bx" x="320" y="108" width="360" height="112" rx="8"/>
+<text class="tm t-new" x="336" y="130">PAYLOAD · A CLAIMS SET, SO IT'S A JWT</text>
+<text class="tf" x="336" y="154">{ "iss": "https://desk.example",</text>
+<text class="tf" x="336" y="172">  "sub": "agent:worker",</text>
+<text class="tf" x="336" y="190">  "awl_tools": ["filings/*"],</text>
+<text class="tf" x="336" y="208">  "exp": 1792325700, … }</text>
+
+<rect class="bx" x="696" y="108" width="280" height="112" rx="8"/>
+<text class="tm t-ok" x="712" y="130">SIGNATURE · BYTES</text>
+<text class="tf" x="712" y="154">ES256(desk private key,</text>
+<text class="tf" x="712" y="172">  b64(header) + "." +</text>
+<text class="tf" x="712" y="190">  b64(payload))</text>
+<text class="ts" x="712" y="210">checked with the desk's public key</text>
+
+<line class="sep" x1="24" y1="240" x2="976" y2="240"/>
+
+<!-- The family -->
+<text class="tm" x="24" y="266">THE FAMILY (JOSE)</text>
+<rect class="bx" x="24" y="278" width="220" height="126" rx="8"/>
+<text class="t tb tl" x="40" y="302">JWS</text>
+<text class="ts" x="40" y="320">signed · RFC 7515</text>
+<text class="ts" x="40" y="338">payload: any bytes</text>
+<rect class="bx" x="260" y="278" width="220" height="126" rx="8"/>
+<text class="t tb tl" x="464" y="302" text-anchor="end">JWE</text>
+<text class="ts" x="464" y="320" text-anchor="end">encrypted · RFC 7516</text>
+<text class="ts" x="464" y="338" text-anchor="end">payload: any bytes</text>
+<rect class="bx-p" x="120" y="350" width="264" height="44" rx="7"/>
+<text class="t tb t-new" x="252" y="368" text-anchor="middle">JWT · RFC 7519</text>
+<text class="ts" x="252" y="385" text-anchor="middle">claims, carried in a JWS or a JWE</text>
+
+<!-- Verifying -->
+<text class="tm" x="520" y="266">VERIFYING ONE, IN THIS ORDER</text>
+<circle class="num" cx="530" cy="290" r="10"/><text class="tm t-new" x="530" y="294" text-anchor="middle">1</text>
+<text class="t" x="550" y="294"><tspan class="tb">typ</tspan> and <tspan class="tb">alg</tspan> on an allow-list (never "none")</text>
+<circle class="num" cx="530" cy="318" r="10"/><text class="tm t-new" x="530" y="322" text-anchor="middle">2</text>
+<text class="t" x="550" y="322"><tspan class="tb">signature</tspan> with the issuer's public key</text>
+<circle class="num" cx="530" cy="346" r="10"/><text class="tm t-new" x="530" y="350" text-anchor="middle">3</text>
+<text class="t" x="550" y="350"><tspan class="tb">exp</tspan> and <tspan class="tb">iat</tspan>, allowing a little clock skew</text>
+<circle class="num" cx="530" cy="374" r="10"/><text class="tm t-new" x="530" y="378" text-anchor="middle">4</text>
+<text class="t" x="550" y="378"><tspan class="tb">iss</tspan>, <tspan class="tb">sub</tspan>, <tspan class="tb">awl_order</tspan> are who you expect</text>
+<circle class="num" cx="530" cy="402" r="10"/><text class="tm t-new" x="530" y="406" text-anchor="middle">5</text>
+<text class="t" x="550" y="406">only then, trust the claims</text>
+
+<text class="t tb" x="500" y="436" text-anchor="middle">Every signed JWT is a JWS. Not every JWS is a JWT.</text>
+</svg>

@@ -7,7 +7,7 @@ export * from "./types.ts";
 export { AwlError, isAwlError } from "./errors.ts";
 export type { AwlErrorCode } from "./errors.ts";
 export {
-  validateOrder, validateReport, validateChildOrder, hasInvalid,
+  validateOrder, validateReport, validateChildOrder, validateChildBudgets, hasInvalid,
   isWorkOrder, isWorkReport, toolAllowed, patternCovered,
   workOrderSchema, workReportSchema,
 } from "./validate.ts";

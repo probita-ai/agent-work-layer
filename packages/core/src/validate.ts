@@ -5,7 +5,7 @@ import addFormatsModule from "ajv-formats";
 import type { ErrorObject, ValidateFunction } from "ajv";
 import { workOrderSchema, workReportSchema } from "./generated.ts";
 import { UNITS } from "./types.ts";
-import type { Finding, WorkOrder, WorkReport } from "./types.ts";
+import type { Finding, State, WorkOrder, WorkReport } from "./types.ts";
 
 // ajv and ajv-formats are CommonJS; their classes live on `.default` under NodeNext.
 const Ajv2020 = Ajv2020Module.default;
@@ -150,6 +150,34 @@ export function validateChildOrder(child: Authority, parent: Authority): Finding
   });
   if (time(child.deadline) > time(parent.deadline)) {
     out.push(finding("C3", "invalid", "/deadline", "later than the parent's deadline"));
+  }
+  return out;
+}
+
+/** Units whose sub-order budgets add up (C4). `seconds` is wall-clock time, and sub-orders run side by side. */
+const SHARED_UNITS = ["usd", "tokens", "tool_calls"] as const;
+
+/** Absorbs floating-point error in sums of money, so 0.1 + 0.2 fits a budget of 0.3. */
+const EPSILON = 1e-9;
+
+/**
+ * Runs sub-order check C4: a parent's sub-orders, this one included, stay within its budget together.
+ * `siblings` are the parent's existing sub-orders with their states; declined ones are not counted.
+ */
+export function validateChildBudgets(
+  child: Pick<WorkOrder, "budget">,
+  parent: Pick<WorkOrder, "budget">,
+  siblings: readonly { order: Pick<WorkOrder, "budget">; state: State }[],
+): Finding[] {
+  const counted = siblings.filter((s) => s.state !== "declined").map((s) => s.order);
+  const out: Finding[] = [];
+  for (const unit of SHARED_UNITS) {
+    const limit = parent.budget[unit];
+    if (limit === undefined) continue;
+    const total = [child, ...counted].reduce((sum, o) => sum + (o.budget[unit] ?? 0), 0);
+    if (total - limit > EPSILON) {
+      out.push(finding("C4", "invalid", `/budget/${unit}`, `sub-orders would total ${Number(total.toFixed(9))} ${unit}, parent's budget is ${limit}`));
+    }
   }
   return out;
 }

@@ -1,6 +1,6 @@
 import { describe, test } from "node:test";
 import assert from "node:assert/strict";
-import { patternCovered, toolAllowed, validateChildOrder } from "../src/index.ts";
+import { patternCovered, toolAllowed, validateChildBudgets, validateChildOrder } from "../src/index.ts";
 import { order, rules } from "./helpers.ts";
 
 describe("toolAllowed", () => {
@@ -79,5 +79,32 @@ describe("validateChildOrder", () => {
   test("reports every violation at once", () => {
     const findings = validateChildOrder(child({ budget: { usd: 9 }, tools: ["*"], deadline: "2027-01-01T00:00:00Z" }), parent);
     assert.deepEqual(rules(findings), ["C1", "C1", "C2", "C3"]);
+  });
+});
+
+describe("validateChildBudgets", () => {
+  const parent = order({ budget: { usd: 2, tokens: 1000, tool_calls: 20, seconds: 60 } });
+  const sibling = (budget: object, state = "working" as const) => ({ order: order({ budget }), state });
+
+  test("accepts sub-orders that fill the budget exactly", () => {
+    assert.deepEqual(validateChildBudgets(order({ budget: { usd: 1 } }), parent, [sibling({ usd: 1 })]), []);
+  });
+
+  test("rejects each unit that the sub-orders overrun together", () => {
+    const findings = validateChildBudgets(order({ budget: { usd: 1, tool_calls: 15 } }), parent, [sibling({ usd: 1.5, tool_calls: 10 })]);
+    assert.deepEqual(findings.map((f) => f.path), ["/budget/usd", "/budget/tool_calls"]);
+  });
+
+  test("does not add up seconds", () => {
+    assert.deepEqual(validateChildBudgets(order({ budget: { seconds: 60 } }), parent, [sibling({ seconds: 60 })]), []);
+  });
+
+  test("does not count declined siblings", () => {
+    assert.deepEqual(validateChildBudgets(order({ budget: { usd: 2 } }), parent, [{ ...sibling({ usd: 2 }), state: "declined" }]), []);
+  });
+
+  test("absorbs floating-point error", () => {
+    const tight = order({ budget: { usd: 0.3 } });
+    assert.deepEqual(validateChildBudgets(order({ budget: { usd: 0.2 } }), tight, [sibling({ usd: 0.1 })]), []);
   });
 });

@@ -394,6 +394,27 @@ describe("sub-orders", () => {
     assert.deepEqual(err.findings.map((f) => f.rule).sort(), ["C1", "C2"]);
   });
 
+  test("sub-orders together cannot exceed the parent's budget", async () => {
+    const { desk } = newDesk();
+    await workingOrder(desk);
+    const child = { budget: { usd: 0.5, tool_calls: 4 } };
+    for (let i = 0; i < 4; i++) await desk.create(childInput(child), WORKER);
+    const err = await rejectsWith(desk.create(childInput(child), WORKER), "VALIDATION_FAILED");
+    assert.deepEqual(err.findings.map((f) => [f.rule, f.path]), [["C4", "/budget/usd"]]);
+    assert.match(err.findings[0].message, /total 2\.5 usd, parent's budget is 2/);
+  });
+
+  test("a declined sub-order frees its budget; a cancelled one does not", async () => {
+    const { desk } = newDesk();
+    await workingOrder(desk);
+    const big = await desk.create(childInput({ budget: { usd: 2, tool_calls: 5 } }), WORKER);
+    await rejectsWith(desk.create(childInput(), WORKER), "VALIDATION_FAILED");
+    await desk.decline(big.order.id, HELPER);
+    const next = await desk.create(childInput({ budget: { usd: 2, tool_calls: 5 } }), WORKER);
+    await desk.cancel(next.order.id, WORKER);
+    await rejectsWith(desk.create(childInput(), WORKER), "VALIDATION_FAILED");
+  });
+
   test("the parent must exist", async () => {
     const { desk } = newDesk();
     await rejectsWith(desk.create(childInput({ parent_id: "missing" }), WORKER), "NOT_FOUND");

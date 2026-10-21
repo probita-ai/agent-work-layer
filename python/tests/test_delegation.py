@@ -1,6 +1,6 @@
 import pytest
 
-from agent_work_layer import pattern_covered, tool_allowed, validate_child_order
+from agent_work_layer import pattern_covered, tool_allowed, validate_child_budgets, validate_child_order
 
 from helpers import order, rules
 
@@ -86,3 +86,32 @@ def test_c3_rejects_a_later_deadline():
 def test_reports_every_violation_at_once():
     findings = validate_child_order(child(budget={"usd": 9}, tools=["*"], deadline="2027-01-01T00:00:00Z"), PARENT)
     assert rules(findings) == ["C1", "C1", "C2", "C3"]
+
+
+BUDGET_PARENT = order(budget={"usd": 2, "tokens": 1000, "tool_calls": 20, "seconds": 60})
+
+
+def sibling(budget, state="working"):
+    return {"order": order(budget=budget), "state": state}
+
+
+def test_c4_accepts_sub_orders_that_fill_the_budget_exactly():
+    assert validate_child_budgets(order(budget={"usd": 1}), BUDGET_PARENT, [sibling({"usd": 1})]) == []
+
+
+def test_c4_rejects_each_unit_the_sub_orders_overrun_together():
+    findings = validate_child_budgets(order(budget={"usd": 1, "tool_calls": 15}), BUDGET_PARENT, [sibling({"usd": 1.5, "tool_calls": 10})])
+    assert [f.path for f in findings] == ["/budget/usd", "/budget/tool_calls"]
+    assert findings[0].message == "sub-orders would total 2.5 usd, parent's budget is 2"
+
+
+def test_c4_does_not_add_up_seconds():
+    assert validate_child_budgets(order(budget={"seconds": 60}), BUDGET_PARENT, [sibling({"seconds": 60})]) == []
+
+
+def test_c4_does_not_count_declined_siblings():
+    assert validate_child_budgets(order(budget={"usd": 2}), BUDGET_PARENT, [sibling({"usd": 2}, "declined")]) == []
+
+
+def test_c4_absorbs_floating_point_error():
+    assert validate_child_budgets(order(budget={"usd": 0.2}), order(budget={"usd": 0.3}), [sibling({"usd": 0.1})]) == []

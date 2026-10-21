@@ -1,0 +1,694 @@
+{
+  "rule": "O1",
+  "check": "order",
+  "description": "Matches the Work Order schema.",
+  "vectors": [
+    {
+      "name": "accepts a complete order",
+      "order": {
+        "spec": "awl/work-order@0.3",
+        "id": "wo_1",
+        "created_at": "2026-01-01T09:00:00Z",
+        "from": "agent:manager",
+        "to": "agent:worker",
+        "goal": "Summarize the risk factors in the annual report",
+        "criteria": [
+          {
+            "id": "c1",
+            "text": "Lists three risk factors with quotes"
+          },
+          {
+            "id": "c2",
+            "text": "States total debt and fiscal year"
+          }
+        ],
+        "budget": {
+          "usd": 2,
+          "tool_calls": 20
+        },
+        "deadline": "2026-01-01T12:00:00Z",
+        "tools": [
+          "filings/*",
+          "calc/ratio"
+        ]
+      },
+      "expect": []
+    },
+    {
+      "name": "accepts every optional field",
+      "order": {
+        "spec": "awl/work-order@0.3",
+        "id": "wo_1",
+        "created_at": "2026-01-01T09:00:00Z",
+        "from": "agent:manager",
+        "to": "agent:worker",
+        "goal": "Summarize the risk factors in the annual report",
+        "criteria": [
+          {
+            "id": "c1",
+            "text": "Lists three risk factors with quotes"
+          },
+          {
+            "id": "c2",
+            "text": "States total debt and fiscal year"
+          }
+        ],
+        "budget": {
+          "usd": 2,
+          "tool_calls": 20
+        },
+        "deadline": "2026-01-01T12:00:00Z",
+        "tools": [
+          "filings/*",
+          "calc/ratio"
+        ],
+        "escalate_to": "human:lead",
+        "inputs": {
+          "issuer": "Example Corp"
+        },
+        "context": [
+          {
+            "uri": "https://example.com/10k.pdf",
+            "note": "latest filing"
+          }
+        ],
+        "handoff": {
+          "summary": "Parser done",
+          "decisions": [
+            {
+              "text": "Stream rows",
+              "why": "Memory"
+            }
+          ],
+          "tried": [
+            {
+              "text": "xlsx",
+              "result": "Too slow"
+            }
+          ],
+          "open_questions": [
+            "Quote style?"
+          ],
+          "next_step": "Add tests"
+        },
+        "output_schema": {
+          "type": "object"
+        },
+        "parent_id": "wo_0",
+        "continues": "wo_prev",
+        "metadata": {
+          "team": "credit"
+        }
+      },
+      "expect": []
+    },
+    {
+      "name": "accepts an earlier version (@0.1)",
+      "order": {
+        "spec": "awl/work-order@0.1",
+        "id": "wo_1",
+        "created_at": "2026-01-01T09:00:00Z",
+        "from": "agent:manager",
+        "to": "agent:worker",
+        "goal": "Summarize the risk factors in the annual report",
+        "criteria": [
+          {
+            "id": "c1",
+            "text": "Lists three risk factors with quotes"
+          },
+          {
+            "id": "c2",
+            "text": "States total debt and fiscal year"
+          }
+        ],
+        "budget": {
+          "usd": 2,
+          "tool_calls": 20
+        },
+        "deadline": "2026-01-01T12:00:00Z",
+        "tools": [
+          "filings/*",
+          "calc/ratio"
+        ]
+      },
+      "expect": []
+    },
+    {
+      "name": "accepts x- extension fields",
+      "order": {
+        "spec": "awl/work-order@0.3",
+        "id": "wo_1",
+        "created_at": "2026-01-01T09:00:00Z",
+        "from": "agent:manager",
+        "to": "agent:worker",
+        "goal": "Summarize the risk factors in the annual report",
+        "criteria": [
+          {
+            "id": "c1",
+            "text": "Lists three risk factors with quotes"
+          },
+          {
+            "id": "c2",
+            "text": "States total debt and fiscal year"
+          }
+        ],
+        "budget": {
+          "usd": 2,
+          "tool_calls": 20
+        },
+        "deadline": "2026-01-01T12:00:00Z",
+        "tools": [
+          "filings/*",
+          "calc/ratio"
+        ],
+        "x-cost-center": "CR-12"
+      },
+      "expect": []
+    },
+    {
+      "name": "accepts an empty tool list",
+      "order": {
+        "spec": "awl/work-order@0.3",
+        "id": "wo_1",
+        "created_at": "2026-01-01T09:00:00Z",
+        "from": "agent:manager",
+        "to": "agent:worker",
+        "goal": "Summarize the risk factors in the annual report",
+        "criteria": [
+          {
+            "id": "c1",
+            "text": "Lists three risk factors with quotes"
+          },
+          {
+            "id": "c2",
+            "text": "States total debt and fiscal year"
+          }
+        ],
+        "budget": {
+          "usd": 2,
+          "tool_calls": 20
+        },
+        "deadline": "2026-01-01T12:00:00Z",
+        "tools": []
+      },
+      "expect": []
+    },
+    {
+      "name": "accepts every tool pattern form",
+      "order": {
+        "spec": "awl/work-order@0.3",
+        "id": "wo_1",
+        "created_at": "2026-01-01T09:00:00Z",
+        "from": "agent:manager",
+        "to": "agent:worker",
+        "goal": "Summarize the risk factors in the annual report",
+        "criteria": [
+          {
+            "id": "c1",
+            "text": "Lists three risk factors with quotes"
+          },
+          {
+            "id": "c2",
+            "text": "States total debt and fiscal year"
+          }
+        ],
+        "budget": {
+          "usd": 2,
+          "tool_calls": 20
+        },
+        "deadline": "2026-01-01T12:00:00Z",
+        "tools": [
+          "*",
+          "filings/*",
+          "filings/get_section",
+          "my-server.v2/tool_1"
+        ]
+      },
+      "expect": []
+    },
+    {
+      "name": "rejects a missing goal",
+      "order": {
+        "spec": "awl/work-order@0.3",
+        "id": "wo_1",
+        "created_at": "2026-01-01T09:00:00Z",
+        "from": "agent:manager",
+        "to": "agent:worker",
+        "criteria": [
+          {
+            "id": "c1",
+            "text": "Lists three risk factors with quotes"
+          },
+          {
+            "id": "c2",
+            "text": "States total debt and fiscal year"
+          }
+        ],
+        "budget": {
+          "usd": 2,
+          "tool_calls": 20
+        },
+        "deadline": "2026-01-01T12:00:00Z",
+        "tools": [
+          "filings/*",
+          "calc/ratio"
+        ]
+      },
+      "expect": [
+        {
+          "rule": "O1",
+          "kind": "invalid",
+          "path": "/"
+        }
+      ]
+    },
+    {
+      "name": "rejects a missing deadline",
+      "order": {
+        "spec": "awl/work-order@0.3",
+        "id": "wo_1",
+        "created_at": "2026-01-01T09:00:00Z",
+        "from": "agent:manager",
+        "to": "agent:worker",
+        "goal": "Summarize the risk factors in the annual report",
+        "criteria": [
+          {
+            "id": "c1",
+            "text": "Lists three risk factors with quotes"
+          },
+          {
+            "id": "c2",
+            "text": "States total debt and fiscal year"
+          }
+        ],
+        "budget": {
+          "usd": 2,
+          "tool_calls": 20
+        },
+        "tools": [
+          "filings/*",
+          "calc/ratio"
+        ]
+      },
+      "expect": [
+        {
+          "rule": "O1",
+          "kind": "invalid",
+          "path": "/"
+        }
+      ]
+    },
+    {
+      "name": "rejects an unknown major version",
+      "order": {
+        "spec": "awl/work-order@9.0",
+        "id": "wo_1",
+        "created_at": "2026-01-01T09:00:00Z",
+        "from": "agent:manager",
+        "to": "agent:worker",
+        "goal": "Summarize the risk factors in the annual report",
+        "criteria": [
+          {
+            "id": "c1",
+            "text": "Lists three risk factors with quotes"
+          },
+          {
+            "id": "c2",
+            "text": "States total debt and fiscal year"
+          }
+        ],
+        "budget": {
+          "usd": 2,
+          "tool_calls": 20
+        },
+        "deadline": "2026-01-01T12:00:00Z",
+        "tools": [
+          "filings/*",
+          "calc/ratio"
+        ]
+      },
+      "expect": [
+        {
+          "rule": "O1",
+          "kind": "invalid",
+          "path": "/spec"
+        }
+      ]
+    },
+    {
+      "name": "rejects empty criteria",
+      "order": {
+        "spec": "awl/work-order@0.3",
+        "id": "wo_1",
+        "created_at": "2026-01-01T09:00:00Z",
+        "from": "agent:manager",
+        "to": "agent:worker",
+        "goal": "Summarize the risk factors in the annual report",
+        "criteria": [],
+        "budget": {
+          "usd": 2,
+          "tool_calls": 20
+        },
+        "deadline": "2026-01-01T12:00:00Z",
+        "tools": [
+          "filings/*",
+          "calc/ratio"
+        ]
+      },
+      "expect": [
+        {
+          "rule": "O1",
+          "kind": "invalid",
+          "path": "/criteria"
+        }
+      ]
+    },
+    {
+      "name": "rejects an empty budget",
+      "order": {
+        "spec": "awl/work-order@0.3",
+        "id": "wo_1",
+        "created_at": "2026-01-01T09:00:00Z",
+        "from": "agent:manager",
+        "to": "agent:worker",
+        "goal": "Summarize the risk factors in the annual report",
+        "criteria": [
+          {
+            "id": "c1",
+            "text": "Lists three risk factors with quotes"
+          },
+          {
+            "id": "c2",
+            "text": "States total debt and fiscal year"
+          }
+        ],
+        "budget": {},
+        "deadline": "2026-01-01T12:00:00Z",
+        "tools": [
+          "filings/*",
+          "calc/ratio"
+        ]
+      },
+      "expect": [
+        {
+          "rule": "O1",
+          "kind": "invalid",
+          "path": "/budget"
+        }
+      ]
+    },
+    {
+      "name": "rejects an unknown budget unit",
+      "order": {
+        "spec": "awl/work-order@0.3",
+        "id": "wo_1",
+        "created_at": "2026-01-01T09:00:00Z",
+        "from": "agent:manager",
+        "to": "agent:worker",
+        "goal": "Summarize the risk factors in the annual report",
+        "criteria": [
+          {
+            "id": "c1",
+            "text": "Lists three risk factors with quotes"
+          },
+          {
+            "id": "c2",
+            "text": "States total debt and fiscal year"
+          }
+        ],
+        "budget": {
+          "euros": 5
+        },
+        "deadline": "2026-01-01T12:00:00Z",
+        "tools": [
+          "filings/*",
+          "calc/ratio"
+        ]
+      },
+      "expect": [
+        {
+          "rule": "O1",
+          "kind": "invalid",
+          "path": "/budget"
+        }
+      ]
+    },
+    {
+      "name": "rejects a negative budget",
+      "order": {
+        "spec": "awl/work-order@0.3",
+        "id": "wo_1",
+        "created_at": "2026-01-01T09:00:00Z",
+        "from": "agent:manager",
+        "to": "agent:worker",
+        "goal": "Summarize the risk factors in the annual report",
+        "criteria": [
+          {
+            "id": "c1",
+            "text": "Lists three risk factors with quotes"
+          },
+          {
+            "id": "c2",
+            "text": "States total debt and fiscal year"
+          }
+        ],
+        "budget": {
+          "usd": -1
+        },
+        "deadline": "2026-01-01T12:00:00Z",
+        "tools": [
+          "filings/*",
+          "calc/ratio"
+        ]
+      },
+      "expect": [
+        {
+          "rule": "O1",
+          "kind": "invalid",
+          "path": "/budget/usd"
+        }
+      ]
+    },
+    {
+      "name": "rejects fractional tokens",
+      "order": {
+        "spec": "awl/work-order@0.3",
+        "id": "wo_1",
+        "created_at": "2026-01-01T09:00:00Z",
+        "from": "agent:manager",
+        "to": "agent:worker",
+        "goal": "Summarize the risk factors in the annual report",
+        "criteria": [
+          {
+            "id": "c1",
+            "text": "Lists three risk factors with quotes"
+          },
+          {
+            "id": "c2",
+            "text": "States total debt and fiscal year"
+          }
+        ],
+        "budget": {
+          "tokens": 1.5
+        },
+        "deadline": "2026-01-01T12:00:00Z",
+        "tools": [
+          "filings/*",
+          "calc/ratio"
+        ]
+      },
+      "expect": [
+        {
+          "rule": "O1",
+          "kind": "invalid",
+          "path": "/budget/tokens"
+        }
+      ]
+    },
+    {
+      "name": "rejects a deadline that is not a timestamp",
+      "order": {
+        "spec": "awl/work-order@0.3",
+        "id": "wo_1",
+        "created_at": "2026-01-01T09:00:00Z",
+        "from": "agent:manager",
+        "to": "agent:worker",
+        "goal": "Summarize the risk factors in the annual report",
+        "criteria": [
+          {
+            "id": "c1",
+            "text": "Lists three risk factors with quotes"
+          },
+          {
+            "id": "c2",
+            "text": "States total debt and fiscal year"
+          }
+        ],
+        "budget": {
+          "usd": 2,
+          "tool_calls": 20
+        },
+        "deadline": "tomorrow",
+        "tools": [
+          "filings/*",
+          "calc/ratio"
+        ]
+      },
+      "expect": [
+        {
+          "rule": "O1",
+          "kind": "invalid",
+          "path": "/deadline"
+        }
+      ]
+    },
+    {
+      "name": "rejects an unknown top-level field",
+      "order": {
+        "spec": "awl/work-order@0.3",
+        "id": "wo_1",
+        "created_at": "2026-01-01T09:00:00Z",
+        "from": "agent:manager",
+        "to": "agent:worker",
+        "goal": "Summarize the risk factors in the annual report",
+        "criteria": [
+          {
+            "id": "c1",
+            "text": "Lists three risk factors with quotes"
+          },
+          {
+            "id": "c2",
+            "text": "States total debt and fiscal year"
+          }
+        ],
+        "budget": {
+          "usd": 2,
+          "tool_calls": 20
+        },
+        "deadline": "2026-01-01T12:00:00Z",
+        "tools": [
+          "filings/*",
+          "calc/ratio"
+        ],
+        "priority": "high"
+      },
+      "expect": [
+        {
+          "rule": "O1",
+          "kind": "invalid",
+          "path": "/"
+        }
+      ]
+    },
+    {
+      "name": "rejects a tool pattern with no server",
+      "order": {
+        "spec": "awl/work-order@0.3",
+        "id": "wo_1",
+        "created_at": "2026-01-01T09:00:00Z",
+        "from": "agent:manager",
+        "to": "agent:worker",
+        "goal": "Summarize the risk factors in the annual report",
+        "criteria": [
+          {
+            "id": "c1",
+            "text": "Lists three risk factors with quotes"
+          },
+          {
+            "id": "c2",
+            "text": "States total debt and fiscal year"
+          }
+        ],
+        "budget": {
+          "usd": 2,
+          "tool_calls": 20
+        },
+        "deadline": "2026-01-01T12:00:00Z",
+        "tools": [
+          "filings"
+        ]
+      },
+      "expect": [
+        {
+          "rule": "O1",
+          "kind": "invalid",
+          "path": "/tools/0"
+        }
+      ]
+    },
+    {
+      "name": "rejects a wildcard server",
+      "order": {
+        "spec": "awl/work-order@0.3",
+        "id": "wo_1",
+        "created_at": "2026-01-01T09:00:00Z",
+        "from": "agent:manager",
+        "to": "agent:worker",
+        "goal": "Summarize the risk factors in the annual report",
+        "criteria": [
+          {
+            "id": "c1",
+            "text": "Lists three risk factors with quotes"
+          },
+          {
+            "id": "c2",
+            "text": "States total debt and fiscal year"
+          }
+        ],
+        "budget": {
+          "usd": 2,
+          "tool_calls": 20
+        },
+        "deadline": "2026-01-01T12:00:00Z",
+        "tools": [
+          "*/search"
+        ]
+      },
+      "expect": [
+        {
+          "rule": "O1",
+          "kind": "invalid",
+          "path": "/tools/0"
+        }
+      ]
+    },
+    {
+      "name": "rejects an empty handoff",
+      "order": {
+        "spec": "awl/work-order@0.3",
+        "id": "wo_1",
+        "created_at": "2026-01-01T09:00:00Z",
+        "from": "agent:manager",
+        "to": "agent:worker",
+        "goal": "Summarize the risk factors in the annual report",
+        "criteria": [
+          {
+            "id": "c1",
+            "text": "Lists three risk factors with quotes"
+          },
+          {
+            "id": "c2",
+            "text": "States total debt and fiscal year"
+          }
+        ],
+        "budget": {
+          "usd": 2,
+          "tool_calls": 20
+        },
+        "deadline": "2026-01-01T12:00:00Z",
+        "tools": [
+          "filings/*",
+          "calc/ratio"
+        ],
+        "handoff": {}
+      },
+      "expect": [
+        {
+          "rule": "O1",
+          "kind": "invalid",
+          "path": "/handoff"
+        }
+      ]
+    }
+  ]
+}

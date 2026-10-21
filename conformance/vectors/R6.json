@@ -1,0 +1,135 @@
+{
+  "rule": "R6",
+  "check": "report",
+  "description": "`cost` reports every unit that `budget` sets.",
+  "vectors": [
+    {
+      "name": "accepts cost units the budget does not set",
+      "order": {
+        "spec": "awl/work-order@0.3",
+        "id": "wo_1",
+        "created_at": "2026-01-01T09:00:00Z",
+        "from": "agent:manager",
+        "to": "agent:worker",
+        "goal": "Summarize the risk factors in the annual report",
+        "criteria": [
+          {
+            "id": "c1",
+            "text": "Lists three risk factors with quotes"
+          },
+          {
+            "id": "c2",
+            "text": "States total debt and fiscal year"
+          }
+        ],
+        "budget": {
+          "usd": 2,
+          "tool_calls": 20
+        },
+        "deadline": "2026-01-01T12:00:00Z",
+        "tools": [
+          "filings/*",
+          "calc/ratio"
+        ]
+      },
+      "report": {
+        "spec": "awl/work-report@0.2",
+        "order_id": "wo_1",
+        "from": "agent:worker",
+        "status": "done",
+        "result": {
+          "summary": "Three risks found; debt 1.2B USD FY2025"
+        },
+        "evidence": [
+          {
+            "criterion": "c1",
+            "type": "tool_call",
+            "ref": "filings/get_section#3"
+          },
+          {
+            "criterion": "c2",
+            "type": "citation",
+            "ref": "filings/get_section#5"
+          }
+        ],
+        "cost": {
+          "usd": 1,
+          "tool_calls": 3,
+          "tokens": 9000
+        },
+        "finished_at": "2026-01-01T10:00:00Z",
+        "tools_used": [
+          "filings/search",
+          "filings/get_section"
+        ]
+      },
+      "expect": []
+    },
+    {
+      "name": "rejects a cost that omits a budgeted unit",
+      "order": {
+        "spec": "awl/work-order@0.3",
+        "id": "wo_1",
+        "created_at": "2026-01-01T09:00:00Z",
+        "from": "agent:manager",
+        "to": "agent:worker",
+        "goal": "Summarize the risk factors in the annual report",
+        "criteria": [
+          {
+            "id": "c1",
+            "text": "Lists three risk factors with quotes"
+          },
+          {
+            "id": "c2",
+            "text": "States total debt and fiscal year"
+          }
+        ],
+        "budget": {
+          "usd": 2,
+          "tool_calls": 20
+        },
+        "deadline": "2026-01-01T12:00:00Z",
+        "tools": [
+          "filings/*",
+          "calc/ratio"
+        ]
+      },
+      "report": {
+        "spec": "awl/work-report@0.2",
+        "order_id": "wo_1",
+        "from": "agent:worker",
+        "status": "done",
+        "result": {
+          "summary": "Three risks found; debt 1.2B USD FY2025"
+        },
+        "evidence": [
+          {
+            "criterion": "c1",
+            "type": "tool_call",
+            "ref": "filings/get_section#3"
+          },
+          {
+            "criterion": "c2",
+            "type": "citation",
+            "ref": "filings/get_section#5"
+          }
+        ],
+        "cost": {
+          "usd": 1
+        },
+        "finished_at": "2026-01-01T10:00:00Z",
+        "tools_used": [
+          "filings/search",
+          "filings/get_section"
+        ]
+      },
+      "expect": [
+        {
+          "rule": "R6",
+          "kind": "invalid",
+          "path": "/cost"
+        }
+      ]
+    }
+  ]
+}

@@ -1,6 +1,6 @@
 import { describe, test } from "node:test";
 import assert from "node:assert/strict";
-import { patternCovered, toolAllowed, validateChildBudgets, validateChildOrder } from "../src/index.ts";
+import { heldBySubOrders, patternCovered, toolAllowed, validateChildBudgets, validateChildOrder, validateOwnCost } from "../src/index.ts";
 import { order, rules } from "./helpers.ts";
 
 describe("toolAllowed", () => {
@@ -106,5 +106,39 @@ describe("validateChildBudgets", () => {
   test("absorbs floating-point error", () => {
     const tight = order({ budget: { usd: 0.3 } });
     assert.deepEqual(validateChildBudgets(order({ budget: { usd: 0.2 } }), tight, [sibling({ usd: 0.1 })]), []);
+  });
+});
+
+describe("heldBySubOrders", () => {
+  test("adds up usd, tokens and tool_calls, leaving out declined sub-orders and seconds", () => {
+    const held = heldBySubOrders([
+      { order: order({ budget: { usd: 0.1, tool_calls: 5, seconds: 60 } }), state: "working" },
+      { order: order({ budget: { usd: 0.2, tokens: 100 } }), state: "approved" },
+      { order: order({ budget: { usd: 9 } }), state: "declined" },
+    ]);
+    assert.deepEqual(held, { usd: 0.3, tool_calls: 5, tokens: 100 });
+  });
+});
+
+describe("validateOwnCost", () => {
+  const parent = order({ budget: { usd: 2, tool_calls: 20 } });
+  const holding = (budget: object) => [{ order: order({ budget }), state: "working" as const }];
+
+  test("accepts own cost that fits beside what sub-orders hold", () => {
+    assert.deepEqual(validateOwnCost({ cost: { usd: 0.5, tool_calls: 15 } }, parent, holding({ usd: 1.5, tool_calls: 5 })), []);
+  });
+
+  test("flags each unit where own cost and holds together exceed the budget", () => {
+    const findings = validateOwnCost({ cost: { usd: 1, tool_calls: 16 } }, parent, holding({ usd: 1.5, tool_calls: 5 }));
+    assert.deepEqual(findings.map((f) => [f.rule, f.kind, f.path]), [["R13", "limit", "/cost/usd"], ["R13", "limit", "/cost/tool_calls"]]);
+    assert.equal(findings[0].message, "spent 1 usd while sub-orders hold 1.5; budget is 2");
+  });
+
+  test("leaves units over budget on their own to R7", () => {
+    assert.deepEqual(validateOwnCost({ cost: { usd: 3, tool_calls: 1 } }, parent, holding({ usd: 1 })), []);
+  });
+
+  test("has nothing to check without sub-orders", () => {
+    assert.deepEqual(validateOwnCost({ cost: { usd: 2, tool_calls: 20 } }, parent, []), []);
   });
 });

@@ -141,7 +141,7 @@ claude mcp add work -e AWL_STORE="$HOME/.awl" -- npx -y agent-work-layer-mcp gat
 ```
 
 - Tools appear as `<server>__<tool>`, and only those the order's `tools` allow. Calls to others are refused.
-- Calls are refused once `budget.tool_calls` or `budget.seconds` is spent, and while the order is not `working`. An `accepted` order is started on its first call.
+- Calls are refused once `budget.tool_calls` or `budget.seconds` is spent, and while the order is not `working`. Tool calls the order's sub-orders hold don't count as its own: with 20 tool calls and a sub-order holding 5, the order itself may make 15. An `accepted` order is started on its first call.
 - Each result ends with an evidence ref such as `filings/search#3`. Cite it as `{ "type": "tool_call", "ref": "filings/search#3" }`.
 - `awl_usage` returns `tools_used` and `cost` to copy into `submit_work_report`, and every call so far.
 - Calls are logged to `<store>/calls/<id>.jsonl`. The log is reloaded on restart, so restarting does not reset the budget.
@@ -182,7 +182,7 @@ npx -y agent-work-layer-mcp gateway --order wo_123 --config upstream.json --acto
 ```
 
 - Every call needs a valid pass for this order and worker. Without one, or with one that is expired, badly signed, or for another worker, order or issuer, the call is refused with `PASS_INVALID`.
-- Tools and `tool_calls` come from the pass. `seconds` is left to the desk's report checks, since a pass doesn't say when work started.
+- Tools and `tool_calls` come from the pass. `seconds`, and the tool calls sub-orders hold, are left to the desk's report checks, since a pass doesn't say when work started or what sub-orders exist.
 - `--pass-file` is read on every call, so the worker renews by writing the new pass there. `AWL_PASS` works for a fixed pass. A call's `_meta["awl/pass"]` wins over both.
 
 | Flag | Environment | Meaning |

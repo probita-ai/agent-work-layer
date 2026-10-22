@@ -6,10 +6,10 @@ import { signPass } from "./pass.ts";
 import type { PassKey } from "./pass.ts";
 import { MemoryStore } from "./store.ts";
 import type { DeskStore } from "./store.ts";
-import { hasInvalid, validateChildBudgets, validateChildOrder, validateOrder, validateReport } from "./validate.ts";
+import { hasInvalid, heldBySubOrders, validateChildBudgets, validateChildOrder, validateOrder, validateOwnCost, validateReport } from "./validate.ts";
 import { ORDER_SPEC, REPORT_SPEC } from "./types.ts";
 import type {
-  Action, AgentRef, Finding, OrderRecord, OrderSummary, State,
+  Action, AgentRef, Amounts, Finding, OrderRecord, OrderSummary, State,
   WorkEvent, WorkOrder, WorkOrderInput, WorkReport, WorkReportInput,
 } from "./types.ts";
 
@@ -56,7 +56,7 @@ export interface WaitOptions {
 
 export interface SubmitResult {
   record: OrderRecord;
-  /** Limit findings (R7, R8) recorded with the report. Empty when within limits. */
+  /** Limit findings (R7, R8, R13) recorded with the report. Empty when within limits. */
   findings: Finding[];
 }
 
@@ -97,6 +97,16 @@ export class WorkDesk {
     const record = await this.store.read(id);
     if (!record) throw new AwlError("NOT_FOUND", `no order "${id}"`);
     return this.#expireIfDue(record);
+  }
+
+  /** An order's sub-orders with their states. */
+  async subOrders(id: string): Promise<OrderRecord[]> {
+    return (await this.store.list()).filter((r) => r.order.parent_id === id);
+  }
+
+  /** The budget an order's sub-orders hold (§8), which the order itself may not spend. */
+  async held(id: string): Promise<Amounts> {
+    return heldBySubOrders(await this.subOrders(id));
   }
 
   /** Summaries of orders matching every given filter field. */
@@ -151,8 +161,7 @@ export class WorkDesk {
       if (parent.state === "offered") throw new AwlError("INVALID_TRANSITION", `parent order "${order.parent_id}" must be accepted before it can be split`);
       const childFindings = validateChildOrder(order, parent.order);
       if (childFindings.length) throw new AwlError("VALIDATION_FAILED", "sub-order exceeds its parent's authority", childFindings);
-      const siblings = (await this.store.list()).filter((r) => r.order.parent_id === order.parent_id);
-      const budgetFindings = validateChildBudgets(order, parent.order, siblings);
+      const budgetFindings = validateChildBudgets(order, parent.order, await this.subOrders(order.parent_id));
       if (budgetFindings.length) throw new AwlError("VALIDATION_FAILED", "sub-orders would exceed their parent's budget", budgetFindings);
     }
 
@@ -219,13 +228,15 @@ export class WorkDesk {
 
   /**
    * Records a report. Invalid reports throw VALIDATION_FAILED and change nothing.
-   * Reports over budget or past the deadline are kept and move the order to `expired`.
+   * Reports over budget or past the deadline are kept and move the order to `expired`. The budget
+   * the order's sub-orders hold counts against its own cost (R13).
    * An `accepted` order is started automatically.
    */
   async submitReport(id: string, input: WorkReportInput, actor: AgentRef): Promise<SubmitResult> {
     requireActor(actor);
     const events: WorkEvent[] = [];
     let findings: Finding[] = [];
+    const subOrders = await this.subOrders(id);
 
     const record = await this.#mutate(id, (rec) => {
       if (rec.state === "accepted") events.push(this.#move(rec, "start", actor));
@@ -242,6 +253,7 @@ export class WorkDesk {
 
       findings = validateReport(report, rec.order);
       if (hasInvalid(findings)) throw new AwlError("VALIDATION_FAILED", "work report rejected", findings);
+      findings.push(...validateOwnCost(report, rec.order, subOrders));
 
       // Permission is checked before anything is recorded.
       events.push(this.#move(rec, `report_${report.status}` as Action, actor, `attempt ${report.attempt}`));

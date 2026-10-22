@@ -365,10 +365,26 @@ def validate_child_order(child: Any, parent: Any) -> List[Finding]:
     return out
 
 
-#: Units whose sub-order budgets add up (C4). ``seconds`` is wall-clock time, and sub-orders run side by side.
+#: Units whose sub-order budgets add up (C4, R13). ``seconds`` is wall-clock time, and sub-orders run side by side.
 _SHARED_UNITS = ("usd", "tokens", "tool_calls")
 #: Absorbs floating-point error in sums of money, so 0.1 + 0.2 fits a budget of 0.3.
 _EPSILON = 1e-9
+
+
+def held_by_sub_orders(sub_orders: Sequence[Mapping[str, Any]]) -> Dict[str, Any]:
+    """The budget an order's sub-orders hold (§8): their budgets added up, leaving out declined ones.
+
+    ``sub_orders`` are ``{"order": ..., "state": ...}``, as the desk stores them.
+    """
+    held: Dict[str, Any] = {}
+    for s in sub_orders:
+        if s["state"] == "declined":
+            continue
+        budget = _plain(s["order"])["budget"]
+        for unit in _SHARED_UNITS:
+            if unit in budget:
+                held[unit] = round(held.get(unit, 0) + budget[unit], 9)
+    return held
 
 
 def validate_child_budgets(child: Any, parent: Any, siblings: Sequence[Mapping[str, Any]]) -> List[Finding]:
@@ -376,16 +392,33 @@ def validate_child_budgets(child: Any, parent: Any, siblings: Sequence[Mapping[s
 
     ``siblings`` are the parent's existing sub-orders as ``{"order": ..., "state": ...}``; declined ones are not counted.
     """
-    child, parent = _plain(child), _plain(parent)
-    counted = [_plain(s["order"]) for s in siblings if s["state"] != "declined"]
+    held = held_by_sub_orders([*siblings, {"order": child, "state": "offered"}])
+    parent = _plain(parent)
     out: List[Finding] = []
     for unit in _SHARED_UNITS:
         limit = parent["budget"].get(unit)
-        if limit is None:
+        total = held.get(unit, 0)
+        if limit is not None and total - limit > _EPSILON:
+            out.append(Finding("C4", "invalid", f"/budget/{unit}", f"sub-orders would total {_num(total)} {unit}, parent's budget is {_num(limit)}"))
+    return out
+
+
+def validate_own_cost(report: Any, order: Any, sub_orders: Sequence[Mapping[str, Any]]) -> List[Finding]:
+    """Runs report check R13: the order's own cost, plus what its sub-orders hold, stays within its budget.
+
+    Units already over budget on their own are left to R7, and units missing from the cost to R6.
+    """
+    report, order = _plain(report), _plain(order)
+    held = held_by_sub_orders(sub_orders)
+    out: List[Finding] = []
+    for unit in _SHARED_UNITS:
+        limit = order["budget"].get(unit)
+        spent = report["cost"].get(unit)
+        hold = held.get(unit, 0)
+        if limit is None or spent is None or spent > limit or not hold:
             continue
-        total = sum(o["budget"].get(unit, 0) for o in [child, *counted])
-        if total - limit > _EPSILON:
-            out.append(Finding("C4", "invalid", f"/budget/{unit}", f"sub-orders would total {_num(round(total, 9))} {unit}, parent's budget is {_num(limit)}"))
+        if spent + hold - limit > _EPSILON:
+            out.append(Finding("R13", "limit", f"/cost/{unit}", f"spent {_num(spent)} {unit} while sub-orders hold {_num(hold)}; budget is {_num(limit)}"))
     return out
 
 

@@ -119,6 +119,8 @@ interface Authority {
   jti?: string;
   /** Seconds worked so far; unknown in pass mode, so `seconds` is left to the desk's report checks. */
   worked?: number;
+  /** Budget the order's sub-orders hold, which it may not spend itself (§8); unknown in pass mode. */
+  held?: Amounts;
   /** Why no call may run under it right now. */
   refusal?: Refusal;
 }
@@ -126,7 +128,7 @@ interface Authority {
 /**
  * Builds a gateway server for one order. It lists only the upstream tools the order allows,
  * and refuses calls that are not allowed, that come after the `tool_calls` or `seconds` budget
- * is spent, or while the order is not `working`. With `passKeys` it enforces a Delegation Pass
+ * is spent (less the tool calls its sub-orders hold), or while the order is not `working`. With `passKeys` it enforces a Delegation Pass
  * instead of the desk's order state. With `enforce: false` it logs those calls instead of
  * refusing them. Connect it to any transport.
  */
@@ -178,6 +180,7 @@ export async function createGateway(options: GatewayOptions): Promise<Gateway> {
       attempt: record.reports.length + 1,
       ...(record.pass ? { jti: decodePass(record.pass).jti } : {}),
       worked: workingSeconds(record, clock()),
+      held: await desk!.held(orderId),
       ...(record.state !== "working" ? { refusal: new Refusal("ORDER_NOT_WORKING", `order "${orderId}" is ${record.state}`) } : {}),
     };
   }
@@ -232,7 +235,7 @@ export async function createGateway(options: GatewayOptions): Promise<Gateway> {
     const seconds = current?.worked;
     const cost: Amounts = { tool_calls: count, ...(seconds === undefined ? {} : { seconds: Math.ceil(seconds) }) };
     const remaining: Amounts = {};
-    if (budget.tool_calls !== undefined) remaining.tool_calls = Math.max(0, budget.tool_calls - count);
+    if (budget.tool_calls !== undefined) remaining.tool_calls = Math.max(0, budget.tool_calls - (current?.held?.tool_calls ?? 0) - count);
     if (budget.seconds !== undefined && seconds !== undefined) remaining.seconds = Math.max(0, budget.seconds - seconds);
     const tools_used = [...new Set(calls.filter((c) => c.n !== undefined).map((c) => c.tool))];
     return { order_id: orderId, tools_used, cost, remaining, calls: [...calls] };
@@ -244,11 +247,12 @@ export async function createGateway(options: GatewayOptions): Promise<Gateway> {
    */
   async function admit(server: string, tool: string, auth: Authority): Promise<{ n: number; secondsLeft?: number; violation?: Refusal }> {
     const { tool_calls, seconds } = auth.budget;
+    const held = auth.held?.tool_calls ?? 0;
     const secondsLeft = seconds === undefined || passKeys ? undefined : seconds - (auth.worked ?? 0);
     const violation =
       auth.refusal ? auth.refusal
       : !toolAllowed(`${server}/${tool}`, auth.tools) ? new Refusal("TOOL_NOT_ALLOWED", `"${server}/${tool}" is not allowed by order "${orderId}"`)
-      : tool_calls !== undefined && count >= tool_calls ? new Refusal("BUDGET_SPENT", `all ${tool_calls} tool calls are spent`)
+      : tool_calls !== undefined && count >= tool_calls - held ? new Refusal("BUDGET_SPENT", held ? `this order's own tool calls are spent: sub-orders hold ${held} of ${tool_calls}` : `all ${tool_calls} tool calls are spent`)
       : secondsLeft !== undefined && secondsLeft <= 0 ? new Refusal("BUDGET_SPENT", `all ${seconds} seconds are spent`)
       : undefined;
     if (!enforce) return { n: ++count, violation };

@@ -210,7 +210,7 @@ A desk MUST run these checks. **Invalid** findings reject the document. **Limit*
 
 ## 8. Sub-orders (delegation)
 
-A worker MAY split its job by issuing new orders with `parent_id` set. Authority only shrinks:
+A worker MAY split its job by issuing new orders with `parent_id` set, but only after accepting the parent order. Authority only shrinks:
 
 | Id | Rule |
 |----|------|

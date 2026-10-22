@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.6.0 — 2026-10-21
+
+Both packages: `agent-work-layer` 0.6.0 and `agent-work-layer-mcp` 0.6.0. Spec v0.3, with two new checks (C4, R13); document formats are unchanged.
 
 ### Added
 
@@ -18,8 +20,17 @@
 
 ### Changed
 
+- A worker can split an order only after accepting it: `WorkDesk.create` refuses a sub-order whose parent is still `offered` with `INVALID_TRANSITION` (SPEC.md §8).
+- `agent-work-layer-mcp` now depends on `agent-work-layer` ^0.6.0: the gateway uses `desk.held()`, which is new in 0.6.0.
 - SPEC.md: a report's `cost` is the order's own spending; sub-orders report their own. §8 used to say a parent's cost SHOULD include its children's, which conflicted with §9.1 (the gateway logs only the order's own calls). A parent that already added its children's costs into its own will now get R13 findings.
 - A desk may now refuse a sub-order it used to accept, when the parent's earlier sub-orders already hold its budget. Existing sub-orders are not re-checked, and no document becomes invalid.
+
+## python 0.3.0 — 2026-10-21
+
+### Added
+
+- `validate_child_budgets(child, parent, siblings)` (C4) and `validate_own_cost(report, order, sub_orders)` (R13), with `held_by_sub_orders(sub_orders)`: a parent's sub-orders together stay within its budget, and a sub-order's budget comes out of what its parent may spend itself. Same findings, paths and messages as `agent-work-layer` 0.6.0.
+- The tests run the shared conformance vectors in `conformance/`.
 
 ## 0.5.0 — 2026-10-17
 

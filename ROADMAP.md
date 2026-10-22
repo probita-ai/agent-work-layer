@@ -1,6 +1,6 @@
 # Roadmap
 
-AWL is at spec v0.3 (packages 0.5). The goal is a small format that many agent frameworks can share. Items marked **help wanted** are good places to start.
+AWL is at spec v0.3 (packages 0.6). The goal is a small format that many agent frameworks can share. Items marked **help wanted** are good places to start.
 
 ## Done
 

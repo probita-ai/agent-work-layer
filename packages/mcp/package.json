@@ -1,6 +1,6 @@
 {
   "name": "agent-work-layer-mcp",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "MCP server for Agent Work Layer: hand Work Orders between agent sessions and get checked Work Reports back.",
   "keywords": [
     "ai",
@@ -44,7 +44,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.1",
-    "agent-work-layer": "^0.5.0",
+    "agent-work-layer": "^0.6.0",
     "zod": "^3.25.76"
   },
   "publishConfig": {

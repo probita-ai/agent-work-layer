@@ -1,6 +1,13 @@
 import pytest
 
-from agent_work_layer import pattern_covered, tool_allowed, validate_child_budgets, validate_child_order
+from agent_work_layer import (
+    held_by_sub_orders,
+    pattern_covered,
+    tool_allowed,
+    validate_child_budgets,
+    validate_child_order,
+    validate_own_cost,
+)
 
 from helpers import order, rules
 
@@ -115,3 +122,29 @@ def test_c4_does_not_count_declined_siblings():
 
 def test_c4_absorbs_floating_point_error():
     assert validate_child_budgets(order(budget={"usd": 0.2}), order(budget={"usd": 0.3}), [sibling({"usd": 0.1})]) == []
+
+
+def test_held_by_sub_orders_leaves_out_declined_sub_orders_and_seconds():
+    held = held_by_sub_orders([
+        sibling({"usd": 0.1, "tool_calls": 5, "seconds": 60}),
+        sibling({"usd": 0.2, "tokens": 100}, "approved"),
+        sibling({"usd": 9}, "declined"),
+    ])
+    assert held == {"usd": 0.3, "tool_calls": 5, "tokens": 100}
+
+
+OWN_PARENT = order(budget={"usd": 2, "tool_calls": 20})
+
+
+def test_r13_accepts_own_cost_that_fits_beside_what_sub_orders_hold():
+    assert validate_own_cost({"cost": {"usd": 0.5, "tool_calls": 15}}, OWN_PARENT, [sibling({"usd": 1.5, "tool_calls": 5})]) == []
+
+
+def test_r13_flags_each_unit_where_own_cost_and_holds_exceed_the_budget():
+    findings = validate_own_cost({"cost": {"usd": 1, "tool_calls": 16}}, OWN_PARENT, [sibling({"usd": 1.5, "tool_calls": 5})])
+    assert [(f.rule, f.kind, f.path) for f in findings] == [("R13", "limit", "/cost/usd"), ("R13", "limit", "/cost/tool_calls")]
+    assert findings[0].message == "spent 1 usd while sub-orders hold 1.5; budget is 2"
+
+
+def test_r13_leaves_units_over_budget_on_their_own_to_r7():
+    assert validate_own_cost({"cost": {"usd": 3, "tool_calls": 1}}, OWN_PARENT, [sibling({"usd": 1})]) == []

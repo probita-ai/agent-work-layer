@@ -415,6 +415,25 @@ describe("sub-orders", () => {
     await rejectsWith(desk.create(childInput(), WORKER), "VALIDATION_FAILED");
   });
 
+  test("a parent may not spend what its sub-orders hold", async () => {
+    const { desk } = newDesk();
+    const id = await workingOrder(desk);
+    await desk.create(childInput({ budget: { usd: 1.5, tool_calls: 5 } }), WORKER);
+    assert.deepEqual(await desk.held(id), { usd: 1.5, tool_calls: 5 });
+    const { record, findings } = await desk.submitReport(id, reportInput({ cost: { usd: 0.8, tool_calls: 7 } }), WORKER);
+    assert.deepEqual(findings.map((f) => [f.rule, f.kind, f.path]), [["R13", "limit", "/cost/usd"]]);
+    assert.equal(record.state, "expired");
+  });
+
+  test("a parent that spends only what it kept is within budget", async () => {
+    const { desk } = newDesk();
+    const id = await workingOrder(desk);
+    await desk.create(childInput({ budget: { usd: 1.5, tool_calls: 5 } }), WORKER);
+    const { record, findings } = await desk.submitReport(id, reportInput({ cost: { usd: 0.5, tool_calls: 7 } }), WORKER);
+    assert.deepEqual(findings, []);
+    assert.equal(record.state, "submitted");
+  });
+
   test("the parent must exist", async () => {
     const { desk } = newDesk();
     await rejectsWith(desk.create(childInput({ parent_id: "missing" }), WORKER), "NOT_FOUND");

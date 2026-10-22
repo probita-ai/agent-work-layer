@@ -104,6 +104,18 @@ describe("MCP gateway", () => {
     assert.equal(arrived.length, 2);
   });
 
+  test("does not spend the tool calls its sub-orders hold", async () => {
+    const { desk, id, call } = await setup({ budget: { tool_calls: 3 } });
+    const child = await desk.create(orderInput({ to: "agent:helper", parent_id: id, budget: { tool_calls: 2 } }), WORKER);
+    assert.ok((await call("filings__search")).ok);
+    const r = await call("filings__search");
+    assert.equal(r.body.code, "BUDGET_SPENT");
+    assert.match(r.body.message, /sub-orders hold 2 of 3/);
+
+    await desk.decline(child.order.id, "agent:helper");
+    assert.ok((await call("filings__search")).ok);
+  });
+
   test("concurrent calls cannot overspend the budget", async () => {
     const { call, arrived } = await setup({ budget: { tool_calls: 3 } });
     const results = await Promise.all(Array.from({ length: 8 }, () => call("calc__ratio")));

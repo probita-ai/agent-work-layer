@@ -127,7 +127,7 @@ A desk SHOULD also accept continuations only from the earlier order's manager (`
 | `status`      | yes | `done` \| `blocked` \| `failed` | Outcome of this attempt. |
 | `result`      | yes | `{summary, output?, artifacts?}` | What was produced. `artifacts` is an array of `{uri, media_type?, note?}`. |
 | `evidence`    | yes | array of Evidence       | Proof, linked to criteria. |
-| `cost`        | yes | Cost                    | What was actually spent. |
+| `cost`        | yes | Cost                    | What this order's worker actually spent itself. Sub-orders report their own (§8). |
 | `finished_at` | yes | timestamp               | When this attempt ended. |
 | `tools_used`  | yes | array of tool names     | Every tool actually called (exact names, no wildcards). |
 | `started_at`  | no  | timestamp               | When work began. |
@@ -165,7 +165,7 @@ States: `offered`, `accepted`, `working`, `blocked`, `submitted` (active) and `a
 
 Rules:
 
-1. A desk MUST expire an order when `deadline` passes or when reported cost exceeds any budget unit.
+1. A desk MUST expire an order when `deadline` passes or when reported cost exceeds any budget unit, counting what its sub-orders hold (R13).
 2. A `failed` report goes to `submitted`; the manager decides whether to rework or cancel.
 3. Every transition MUST be recorded as an event (§6.1). The event log is the audit trail.
 
@@ -207,6 +207,7 @@ A desk MUST run these checks. **Invalid** findings reject the document. **Limit*
 | R10 | invalid | When `failed`, `error` is present. |
 | R11 | invalid | When `done` and `output_schema` is set, `result.output` matches it. |
 | R12 | invalid | `started_at`, if present, ≤ `finished_at`. |
+| R13 | limit   | For `usd`, `tokens` and `tool_calls`, `cost` plus the budgets the order's sub-orders hold (§8) ≤ `budget`. |
 
 ## 8. Sub-orders (delegation)
 
@@ -219,11 +220,13 @@ A worker MAY split its job by issuing new orders with `parent_id` set. Authority
 | C3 | The child's deadline ≤ the parent's deadline. |
 | C4 | For `usd`, `tokens` and `tool_calls`, the budgets of the parent's sub-orders, this one included, add up to at most the parent's value. |
 
-A desk MUST reject a child order that breaks C1–C4. The parent's reported cost SHOULD include its children's costs.
+A desk MUST reject a child order that breaks C1–C4.
 
 C1–C3 compare a child with its parent; C4 compares it with its siblings too, so that the sub-orders together hold no more budget than the parent. C4 counts every sub-order with the same `parent_id` except `declined` ones, which did no work. A cancelled, expired or approved sub-order counts in full: it may have spent its whole budget. `seconds` is not added up, because sub-orders run side by side; C3 limits their time. Sums are compared with a tolerance of 10⁻⁹, so that, for example, sub-orders of `0.1` and `0.2` fit a budget of `0.3`.
 
 C4 needs the desk's list of sub-orders, so it is checked when the desk creates a child, not by a verifier holding only passes (§10.2).
+
+A sub-order's budget also comes out of what its parent may spend itself: an order's own `cost`, plus the budgets its sub-orders hold (counted as for C4), stays within its budget (R13, and gateway rule 2 in §9.1). Each order reports only its own spending, and the desk adds up the sub-orders from its own records. So every level spends only what it kept, and a whole tree of sub-orders never spends more than the budget at its root, however deep it goes.
 
 ## 9. Bindings
 
@@ -238,7 +241,7 @@ How AWL documents travel. A desk MAY support several.
 A gateway is an MCP server that sits between one worker and its real MCP servers, for one order. It enforces the order while the worker works, instead of only checking the report afterwards (§10).
 
 1. It MUST refuse a call to a tool that no pattern in `tools` allows (§4.3), and SHOULD NOT list such tools.
-2. It MUST refuse calls once `budget.tool_calls` calls have reached a tool, and once `budget.seconds` have passed since the order was first started. It SHOULD stop a running call when the seconds run out.
+2. It MUST refuse calls once `budget.tool_calls` calls, less the tool calls the order's sub-orders hold (§8), have reached a tool, and once `budget.seconds` have passed since the order was first started. It SHOULD stop a running call when the seconds run out.
 3. It MUST refuse calls while the order is not `working`. It MAY start an `accepted` order on its first call.
 4. Refused calls do not reach the tool and do not count against the budget. A call that reached the tool counts even if the tool returned an error.
 5. It numbers the calls that reach a tool 1, 2, 3… per order, across reworks, and names each `<server>/<tool>#<n>`. That name is the `ref` of `tool_call` evidence (§5.1), and the gateway SHOULD return it with the call's result.
@@ -250,7 +253,9 @@ A gateway MAY work from **Delegation Passes** instead of the desk's order state 
 
 A gateway MAY instead run in **observe** mode, for deployments whose own gateway or policy engine already controls access. It then applies rules 4–7 but not 1–3: it refuses nothing, and it SHOULD mark each logged call that rules 1–3 would have refused. Calls over budget or to tools the order does not allow still show up in the report, where checks R5 and R7 catch them.
 
-The gateway cannot measure `usd` or `tokens`; those are still checked when the report arrives (R7). The reference implementation is `awl-desk gateway` in `agent-work-layer-mcp`.
+A pass does not say what sub-orders the order has, so a pass-mode gateway enforces the whole `awl_budget.tool_calls`; the desk applies R13 when the report arrives.
+
+The gateway cannot measure `usd` or `tokens`; those are checked only when the report arrives (R7, R13), after they are spent. The reference implementation is `awl-desk gateway` in `agent-work-layer-mcp`.
 
 ## 10. Security
 

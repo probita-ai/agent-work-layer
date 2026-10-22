@@ -3,17 +3,17 @@ import { describe, test } from "node:test";
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { validateChildBudgets, validateChildOrder, validateOrder, validateReport } from "../src/index.ts";
-import type { Finding, State, WorkOrder } from "../src/index.ts";
+import { validateChildBudgets, validateChildOrder, validateOrder, validateOwnCost, validateReport } from "../src/index.ts";
+import type { Finding, State, WorkOrder, WorkReport } from "../src/index.ts";
 
 const dir = fileURLToPath(new URL("../../../conformance/vectors/", import.meta.url));
 
 type Expected = { rule: string; kind: Finding["kind"]; path?: string };
 type Sibling = { state: State; order: WorkOrder };
-type Vector = { name: string; order: WorkOrder; report?: unknown; parent?: WorkOrder; siblings?: Sibling[]; expect: Expected[] };
-type VectorFile = { rule: string; check: "order" | "report" | "child" | "siblings"; description: string; vectors: Vector[] };
+type Vector = { name: string; order: WorkOrder; report?: unknown; parent?: WorkOrder; siblings?: Sibling[]; sub_orders?: Sibling[]; expect: Expected[] };
+type VectorFile = { rule: string; check: "order" | "report" | "child" | "siblings" | "own-cost"; description: string; vectors: Vector[] };
 
-const RULES = ["O1", "O2", "O3", "O4", "R1", "R2", "R3", "R4", "R5", "R6", "R7", "R8", "R9", "R10", "R11", "R12", "C1", "C2", "C3", "C4"];
+const RULES = ["O1", "O2", "O3", "O4", "R1", "R2", "R3", "R4", "R5", "R6", "R7", "R8", "R9", "R10", "R11", "R12", "R13", "C1", "C2", "C3", "C4"];
 
 const files: VectorFile[] = readdirSync(dir)
   .filter((f) => f.endsWith(".json"))
@@ -22,6 +22,7 @@ const files: VectorFile[] = readdirSync(dir)
 function run(file: VectorFile, v: Vector): Finding[] {
   if (file.check === "order") return validateOrder(v.order);
   if (file.check === "report") return validateReport(v.report, v.order);
+  if (file.check === "own-cost") return validateOwnCost(v.report as WorkReport, v.order, v.sub_orders!);
   if (file.check === "child") return validateChildOrder(v.order, v.parent!);
   return validateChildBudgets(v.order, v.parent!, v.siblings!);
 }
@@ -47,7 +48,8 @@ describe("conformance vectors", () => {
 describe("conformance coverage", () => {
   test("every rule has a file of the right check", () => {
     assert.deepEqual(files.map((f) => f.rule).sort(), [...RULES].sort());
-    const check = (rule: string) => (rule === "C4" ? "siblings" : { O: "order", R: "report", C: "child" }[rule[0]]);
+    const special: Record<string, string> = { C4: "siblings", R13: "own-cost" };
+    const check = (rule: string) => (special[rule] ?? { O: "order", R: "report", C: "child" }[rule[0]]);
     for (const f of files) assert.equal(f.check, check(f.rule), f.rule);
   });
 
@@ -61,7 +63,7 @@ describe("conformance coverage", () => {
     if (file.check !== "order") {
       test(`${file.rule} vectors run against valid orders`, () => {
         for (const v of file.vectors) {
-          for (const o of [v.order, v.parent, ...(v.siblings ?? []).map((s) => s.order)]) if (o) assert.deepEqual(validateOrder(o), [], v.name);
+          for (const o of [v.order, v.parent, ...[...(v.siblings ?? []), ...(v.sub_orders ?? [])].map((s) => s.order)]) if (o) assert.deepEqual(validateOrder(o), [], v.name);
         }
       });
     }

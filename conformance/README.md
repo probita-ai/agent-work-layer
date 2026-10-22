@@ -31,19 +31,21 @@ Both implementations in this repo run every vector: [packages/core/test/conforma
 | `description` | The rule's text from the spec. |
 | `vectors[].name` | What the vector shows. |
 | `vectors[].order` | A Work Order. For `child` and `siblings`, the new sub-order. |
-| `vectors[].report` | `report` only: the Work Report to check against `order`. |
+| `vectors[].report` | `report` and `own-cost` only: the Work Report to check against `order`. |
 | `vectors[].parent` | `child` and `siblings` only: the parent order. |
 | `vectors[].siblings` | `siblings` only: the parent's existing sub-orders, each `{state, order}`. |
+| `vectors[].sub_orders` | `own-cost` only: the order's sub-orders, each `{state, order}`. |
 | `vectors[].expect` | The findings, each `{rule, kind, path?}`. Empty when the document is valid. |
 
 | `check` | Run | Rules |
 |---|---|---|
 | `order` | the order checks on `order` | O1–O4 |
 | `report` | the report checks on `report` against `order` | R1–R12 |
+| `own-cost` | the own-cost check on `report` against `order` and its `sub_orders` | R13 |
 | `child` | the sub-order checks on `order` against `parent` | C1–C3 |
 | `siblings` | the sibling budget check on `order` against `parent` and `siblings`, the parent's existing sub-orders as `{state, order}` | C4 |
 
-Every check runs, not only the file's rule. A vector changes one thing from a valid document, so the only findings expected are for the file's rule. The orders in `report`, `child` and `siblings` vectors are valid; report checks assume a valid order.
+Every check runs, not only the file's rule. A vector changes one thing from a valid document, so the only findings expected are for the file's rule. The orders in `report`, `own-cost`, `child` and `siblings` vectors are valid; report checks assume a valid order.
 
 ## Matching
 

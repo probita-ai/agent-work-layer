@@ -5,7 +5,7 @@ import addFormatsModule from "ajv-formats";
 import type { ErrorObject, ValidateFunction } from "ajv";
 import { workOrderSchema, workReportSchema } from "./generated.ts";
 import { UNITS } from "./types.ts";
-import type { Finding, State, WorkOrder, WorkReport } from "./types.ts";
+import type { Amounts, Finding, State, WorkOrder, WorkReport } from "./types.ts";
 
 // ajv and ajv-formats are CommonJS; their classes live on `.default` under NodeNext.
 const Ajv2020 = Ajv2020Module.default;
@@ -154,29 +154,61 @@ export function validateChildOrder(child: Authority, parent: Authority): Finding
   return out;
 }
 
-/** Units whose sub-order budgets add up (C4). `seconds` is wall-clock time, and sub-orders run side by side. */
+/** Units whose sub-order budgets add up (C4, R13). `seconds` is wall-clock time, and sub-orders run side by side. */
 const SHARED_UNITS = ["usd", "tokens", "tool_calls"] as const;
 
 /** Absorbs floating-point error in sums of money, so 0.1 + 0.2 fits a budget of 0.3. */
 const EPSILON = 1e-9;
 
+const round = (n: number) => Number(n.toFixed(9));
+
+/** A sub-order with its state, as the desk stores it. */
+export type SubOrder = { order: Pick<WorkOrder, "budget">; state: State };
+
+/** The budget an order's sub-orders hold (§8): their budgets added up, leaving out declined ones. */
+export function heldBySubOrders(subOrders: readonly SubOrder[]): Amounts {
+  const held: Amounts = {};
+  for (const { order, state } of subOrders) {
+    if (state === "declined") continue;
+    for (const unit of SHARED_UNITS) {
+      const amount = order.budget[unit];
+      if (amount !== undefined) held[unit] = round((held[unit] ?? 0) + amount);
+    }
+  }
+  return held;
+}
+
 /**
  * Runs sub-order check C4: a parent's sub-orders, this one included, stay within its budget together.
  * `siblings` are the parent's existing sub-orders with their states; declined ones are not counted.
  */
-export function validateChildBudgets(
-  child: Pick<WorkOrder, "budget">,
-  parent: Pick<WorkOrder, "budget">,
-  siblings: readonly { order: Pick<WorkOrder, "budget">; state: State }[],
-): Finding[] {
-  const counted = siblings.filter((s) => s.state !== "declined").map((s) => s.order);
+export function validateChildBudgets(child: Pick<WorkOrder, "budget">, parent: Pick<WorkOrder, "budget">, siblings: readonly SubOrder[]): Finding[] {
+  const held = heldBySubOrders([...siblings, { order: child, state: "offered" }]);
   const out: Finding[] = [];
   for (const unit of SHARED_UNITS) {
     const limit = parent.budget[unit];
-    if (limit === undefined) continue;
-    const total = [child, ...counted].reduce((sum, o) => sum + (o.budget[unit] ?? 0), 0);
-    if (total - limit > EPSILON) {
-      out.push(finding("C4", "invalid", `/budget/${unit}`, `sub-orders would total ${Number(total.toFixed(9))} ${unit}, parent's budget is ${limit}`));
+    const total = held[unit] ?? 0;
+    if (limit !== undefined && total - limit > EPSILON) {
+      out.push(finding("C4", "invalid", `/budget/${unit}`, `sub-orders would total ${total} ${unit}, parent's budget is ${limit}`));
+    }
+  }
+  return out;
+}
+
+/**
+ * Runs report check R13: the order's own cost, plus what its sub-orders hold, stays within its budget.
+ * Units already over budget on their own are left to R7, and units missing from the cost to R6.
+ */
+export function validateOwnCost(report: Pick<WorkReport, "cost">, order: Pick<WorkOrder, "budget">, subOrders: readonly SubOrder[]): Finding[] {
+  const held = heldBySubOrders(subOrders);
+  const out: Finding[] = [];
+  for (const unit of SHARED_UNITS) {
+    const limit = order.budget[unit];
+    const spent = report.cost[unit];
+    const hold = held[unit] ?? 0;
+    if (limit === undefined || spent === undefined || spent > limit || !hold) continue;
+    if (spent + hold - limit > EPSILON) {
+      out.push(finding("R13", "limit", `/cost/${unit}`, `spent ${spent} ${unit} while sub-orders hold ${hold}; budget is ${limit}`));
     }
   }
   return out;

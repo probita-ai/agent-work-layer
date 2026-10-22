@@ -10,9 +10,15 @@
   - `validateChildBudgets(child, parent, siblings)` in `agent-work-layer` and `agent-work-layer/validate`; `validate_child_budgets` in the Python package.
   - `WorkDesk.create` (and `create_work_order` over MCP) rejects a sub-order that breaks C4 with `VALIDATION_FAILED`.
   - `conformance/vectors/C4.json`, with a new `siblings` check.
+- Rule R13 (#25), SPEC.md §7.2 and §8: a sub-order's budget comes out of what its parent may spend itself. An order's own cost, plus the budgets its sub-orders hold, must stay within its budget, so a tree of sub-orders never spends more than its root's budget, however deep it goes. Before, each level could spend its whole budget and hand the same amount down.
+  - It's a `limit` finding, like R7: the report is kept and the order expires. Counts `usd`, `tokens` and `tool_calls`, as C4 does.
+  - `validateOwnCost(report, order, subOrders)` and `heldBySubOrders(subOrders)`; `validate_own_cost` and `held_by_sub_orders` in the Python package. `WorkDesk.submitReport` applies it, and `desk.subOrders(id)` and `desk.held(id)` read what an order's sub-orders hold.
+  - `agent-work-layer-mcp` gateway: in desk mode, an order's own tool calls stop at its `tool_calls` budget less what its sub-orders hold, and `awl_usage` shows that in `remaining`. Pass mode still enforces the pass's whole `tool_calls`, since a pass doesn't list sub-orders.
+  - `conformance/vectors/R13.json`, with a new `own-cost` check.
 
 ### Changed
 
+- SPEC.md: a report's `cost` is the order's own spending; sub-orders report their own. §8 used to say a parent's cost SHOULD include its children's, which conflicted with §9.1 (the gateway logs only the order's own calls). A parent that already added its children's costs into its own will now get R13 findings.
 - A desk may now refuse a sub-order it used to accept, when the parent's earlier sub-orders already hold its budget. Existing sub-orders are not re-checked, and no document becomes invalid.
 
 ## 0.5.0 — 2026-10-17

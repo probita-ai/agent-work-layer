@@ -3,7 +3,7 @@ import json
 
 import pytest
 
-from agent_work_layer import validate_child_budgets, validate_child_order, validate_order, validate_report
+from agent_work_layer import validate_child_budgets, validate_child_order, validate_order, validate_own_cost, validate_report
 
 from helpers import REPO
 
@@ -16,6 +16,8 @@ def run(file, v):
         return validate_order(v["order"])
     if file["check"] == "report":
         return validate_report(v["report"], v["order"])
+    if file["check"] == "own-cost":
+        return validate_own_cost(v["report"], v["order"], v["sub_orders"])
     if file["check"] == "child":
         return validate_child_order(v["order"], v["parent"])
     return validate_child_budgets(v["order"], v["parent"], v["siblings"])

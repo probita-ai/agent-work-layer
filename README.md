@@ -91,7 +91,7 @@ The desk enforces the spec as you go:
 - Evidence for every criterion.
 - Only allowed tools.
 - Cost within budget and finishing before the deadline. Going over either expires the order.
-- Sub-orders can only narrow their parent's authority, and together they stay within its budget.
+- Sub-orders can only narrow their parent's authority. Their budgets come out of the parent's, so a whole tree of sub-orders never spends more than the order at its root.
 - A reissued order can only continue a finished one, so one job never has two live orders.
 
 Optionally, it also signs the worker's authority into a [Delegation Pass](#delegation-pass) that gateways and other systems can check without the desk.
@@ -215,9 +215,10 @@ Any active state ──cancel──▶ cancelled   ·   deadline or budget excee
 
 | Export | Purpose |
 |---|---|
-| `WorkDesk` | Runs the lifecycle: `create`, `accept`, `decline`, `start`, `submitReport`, `answer`, `review`, `cancel`, `get`, `list`, `waitForChange`, and `issuePass` when it issues passes |
+| `WorkDesk` | Runs the lifecycle: `create`, `accept`, `decline`, `start`, `submitReport`, `answer`, `review`, `cancel`, `get`, `list`, `subOrders`, `held`, `waitForChange`, and `issuePass` when it issues passes |
 | `MemoryStore`, `FileStore`, `SqliteStore`, `DeskStore` | Storage. Implement `DeskStore` (4 methods) to use a database |
-| `validateOrder`, `validateReport`, `validateChildOrder`, `validateChildBudgets`, `hasInvalid` | Spec checks, returning `Finding[]` |
+| `validateOrder`, `validateReport`, `validateChildOrder`, `validateChildBudgets`, `validateOwnCost`, `hasInvalid` | Spec checks, returning `Finding[]` |
+| `heldBySubOrders` | The budget an order's sub-orders hold, which it may not spend itself |
 | `isWorkOrder`, `isWorkReport` | Type guards |
 | `toolAllowed`, `patternCovered` | Tool pattern matching |
 | `nextState`, `allowedActions`, `STATES`, `ROLE_FOR`, `isTerminal` | The state machine |

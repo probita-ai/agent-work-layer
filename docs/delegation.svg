@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 792 407" width="792" height="407" role="img" aria-label="Delegation tree: the human holds full authority, passes a subset to the manager, which passes smaller subsets to two workers. A worker request beyond its pass is refused.">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 792 448" width="792" height="448" role="img" aria-label="Delegation tree: the human owner holds a budget of $8 with all tools and all time. It gives $4 to the manager and keeps $4. The manager gives $2 to worker A and $1 to worker B and keeps $1 for itself. A sub-order's budget comes out of its parent's, so the whole tree never spends more than the owner's $8. A worker request beyond its pass is refused.">
 <style>
 svg{--bg:#f4f5f8;--surface:#ffffff;--fg:#171b24;--muted:#5a6376;--line:#c8cdd8;--accent:#2b57c4;--new:#c97a06;--new-bg:#fff4df;--ok:#1d8a59;--stop:#b8402f;
 --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;--mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
@@ -27,7 +27,7 @@ svg{--bg:#f4f5f8;--surface:#ffffff;--fg:#171b24;--muted:#5a6376;--line:#c8cdd8;-
 .tm { fill: var(--muted); font: 500 11px var(--mono); letter-spacing: .06em; }
 .tf { fill: var(--fg); font: 12.5px var(--mono); }
 .t-new { fill: var(--new); } .t-acc { fill: var(--accent); } .t-ok { fill: var(--ok); } .t-stop { fill: var(--stop); }
-.bar-bg { fill: var(--line); } .bar { fill: var(--new); }
+.bar-bg { fill: var(--line); } .bar { fill: var(--new); } .bar-out { fill: var(--accent); }
 .loop { fill: none; stroke: var(--accent); stroke-width: 1.2; stroke-dasharray: 3 3; }
 </style>
 <defs>
@@ -35,23 +35,34 @@ svg{--bg:#f4f5f8;--surface:#ffffff;--fg:#171b24;--muted:#5a6376;--line:#c8cdd8;-
     <marker id="ahn" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk-n"/></marker>
     <marker id="aha" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk-a"/></marker>
     <marker id="ahs" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk-s"/></marker>
+    <clipPath id="clip-owner"><rect x="290" y="74" width="180" height="8" rx="4"/></clipPath>
+    <clipPath id="clip-manager"><rect x="290" y="204" width="180" height="8" rx="4"/></clipPath>
   </defs>
-<rect class="frame" x="0" y="0" width="792" height="407" rx="12"/>
+<rect class="frame" x="0" y="0" width="792" height="448" rx="12"/>
 <g transform="translate(16,16)">
         <rect class="bx" x="270" y="16" width="220" height="80" rx="8"/>
         <text class="tm" x="380" y="38" text-anchor="middle">HUMAN OWNER</text>
-        <text class="t" x="380" y="59" text-anchor="middle">full budget · all tools · all time</text>
-        <rect class="bar-bg" x="290" y="74" width="180" height="8" rx="4"/>
-        <rect class="bar" x="290" y="74" width="180" height="8" rx="4"/>
+        <text class="t" x="380" y="59" text-anchor="middle">$8 · all tools · all time</text>
+        <g clip-path="url(#clip-owner)">
+          <rect class="bar-out" x="290" y="74" width="90" height="8"/>
+          <rect class="bar" x="380" y="74" width="90" height="8"/>
+        </g>
+        <text class="ts" x="504" y="52"><tspan class="t-acc tb">gives $4</tspan> to the manager</text>
+        <text class="ts" x="504" y="70"><tspan class="t-new tb">keeps $4</tspan> to spend itself</text>
 
         <line class="ln-new" x1="380" y1="98" x2="380" y2="144" marker-end="url(#ahn)"/>
         <text class="ts t-new tb" x="390" y="125">Delegation Pass</text>
 
         <rect class="bx" x="270" y="146" width="220" height="80" rx="8"/>
         <text class="tm" x="380" y="168" text-anchor="middle">MANAGER AGENT</text>
-        <text class="t" x="380" y="189" text-anchor="middle">subset of owner's pass</text>
+        <text class="t" x="380" y="189" text-anchor="middle">$4 of the owner's $8</text>
         <rect class="bar-bg" x="290" y="204" width="180" height="8" rx="4"/>
-        <rect class="bar" x="290" y="204" width="90" height="8" rx="4"/>
+        <g clip-path="url(#clip-manager)">
+          <rect class="bar-out" x="290" y="204" width="67.5" height="8"/>
+          <rect class="bar" x="357.5" y="204" width="22.5" height="8"/>
+        </g>
+        <text class="ts" x="504" y="182"><tspan class="t-acc tb">gives $3</tspan>: $2 to A, $1 to B</text>
+        <text class="ts" x="504" y="200"><tspan class="t-new tb">keeps $1</tspan> to spend itself</text>
 
         <line class="ln-new" x1="330" y1="228" x2="240" y2="274" marker-end="url(#ahn)"/>
         <text class="ts" x="276" y="250" text-anchor="end">narrower pass</text>
@@ -60,19 +71,26 @@ svg{--bg:#f4f5f8;--surface:#ffffff;--fg:#171b24;--muted:#5a6376;--line:#c8cdd8;-
 
         <rect class="bx" x="100" y="276" width="220" height="80" rx="8"/>
         <text class="tm" x="210" y="298" text-anchor="middle">WORKER AGENT A</text>
-        <text class="t" x="210" y="319" text-anchor="middle">subset of manager's pass</text>
+        <text class="t" x="210" y="319" text-anchor="middle">$2 of the manager's $4</text>
         <rect class="bar-bg" x="120" y="334" width="180" height="8" rx="4"/>
-        <rect class="bar" x="120" y="334" width="50" height="8" rx="4"/>
+        <rect class="bar" x="120" y="334" width="45" height="8" rx="4"/>
 
         <rect class="bx" x="440" y="276" width="220" height="80" rx="8"/>
         <text class="tm" x="550" y="298" text-anchor="middle">WORKER AGENT B</text>
-        <text class="t" x="550" y="319" text-anchor="middle">subset of manager's pass</text>
+        <text class="t" x="550" y="319" text-anchor="middle">$1 of the manager's $4</text>
         <rect class="bar-bg" x="460" y="334" width="180" height="8" rx="4"/>
-        <rect class="bar" x="460" y="334" width="25" height="8" rx="4"/>
+        <rect class="bar" x="460" y="334" width="22.5" height="8" rx="4"/>
 
         <line class="ln-stop" x1="98" y1="300" x2="40" y2="300" marker-end="url(#ahs)"/>
         <text class="ts t-stop tb" x="20" y="256">request beyond</text>
         <text class="ts t-stop tb" x="20" y="272">its pass</text>
         <text class="ts t-stop" x="20" y="322">refused</text>
+
+        <line class="sep" x1="20" y1="374" x2="740" y2="374"/>
+        <text class="t" x="20" y="398">A sub-order's budget comes out of its parent's (C4, R13), so the whole tree never spends more than the owner's $8.</text>
+        <rect class="bar-out" x="20" y="410" width="18" height="8" rx="4"/>
+        <text class="ts" x="44" y="418">handed down to sub-orders</text>
+        <rect class="bar" x="210" y="410" width="18" height="8" rx="4"/>
+        <text class="ts" x="234" y="418">kept to spend itself</text>
       </g>
 </svg>

@@ -27,6 +27,7 @@ from .validate import (
     is_work_report,
     pattern_covered,
     tool_allowed,
+    validate_child_budgets,
     validate_child_order,
     validate_order,
     validate_report,
@@ -41,6 +42,6 @@ __all__ = [
     "WorkOrder", "WorkReport", "WorkResult",
     "ORDER_SPEC", "ORDER_SPECS", "REPORT_SPEC", "REPORT_SPECS", "UNITS", "Finding",
     "has_invalid", "is_work_order", "is_work_report", "pattern_covered", "tool_allowed",
-    "validate_child_order", "validate_order", "validate_report", "work_order_schema", "work_report_schema",
+    "validate_child_budgets", "validate_child_order", "validate_order", "validate_report", "work_order_schema", "work_report_schema",
     "__version__",
 ]

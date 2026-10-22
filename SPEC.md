@@ -210,15 +210,20 @@ A desk MUST run these checks. **Invalid** findings reject the document. **Limit*
 
 ## 8. Sub-orders (delegation)
 
-A worker MAY split its job by issuing new orders with `parent_id` set. Authority only shrinks:
+A worker MAY split its job by issuing new orders with `parent_id` set, but only after accepting the parent order. Authority only shrinks:
 
 | Id | Rule |
 |----|------|
 | C1 | The child's budget sets every unit the parent sets, each ≤ the parent's value. |
 | C2 | Every child tool pattern is covered by the parent's patterns. |
 | C3 | The child's deadline ≤ the parent's deadline. |
+| C4 | For `usd`, `tokens` and `tool_calls`, the budgets of the parent's sub-orders, this one included, add up to at most the parent's value. |
 
-A desk MUST reject a child order that breaks C1–C3. The parent's reported cost SHOULD include its children's costs.
+A desk MUST reject a child order that breaks C1–C4. The parent's reported cost SHOULD include its children's costs.
+
+C1–C3 compare a child with its parent; C4 compares it with its siblings too, so that the sub-orders together hold no more budget than the parent. C4 counts every sub-order with the same `parent_id` except `declined` ones, which did no work. A cancelled, expired or approved sub-order counts in full: it may have spent its whole budget. `seconds` is not added up, because sub-orders run side by side; C3 limits their time. Sums are compared with a tolerance of 10⁻⁹, so that, for example, sub-orders of `0.1` and `0.2` fit a budget of `0.3`.
+
+C4 needs the desk's list of sub-orders, so it is checked when the desk creates a child, not by a verifier holding only passes (§10.2).
 
 ## 9. Bindings
 

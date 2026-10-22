@@ -365,6 +365,30 @@ def validate_child_order(child: Any, parent: Any) -> List[Finding]:
     return out
 
 
+#: Units whose sub-order budgets add up (C4). ``seconds`` is wall-clock time, and sub-orders run side by side.
+_SHARED_UNITS = ("usd", "tokens", "tool_calls")
+#: Absorbs floating-point error in sums of money, so 0.1 + 0.2 fits a budget of 0.3.
+_EPSILON = 1e-9
+
+
+def validate_child_budgets(child: Any, parent: Any, siblings: Sequence[Mapping[str, Any]]) -> List[Finding]:
+    """Runs sub-order check C4: a parent's sub-orders, this one included, stay within its budget together.
+
+    ``siblings`` are the parent's existing sub-orders as ``{"order": ..., "state": ...}``; declined ones are not counted.
+    """
+    child, parent = _plain(child), _plain(parent)
+    counted = [_plain(s["order"]) for s in siblings if s["state"] != "declined"]
+    out: List[Finding] = []
+    for unit in _SHARED_UNITS:
+        limit = parent["budget"].get(unit)
+        if limit is None:
+            continue
+        total = sum(o["budget"].get(unit, 0) for o in [child, *counted])
+        if total - limit > _EPSILON:
+            out.append(Finding("C4", "invalid", f"/budget/{unit}", f"sub-orders would total {_num(round(total, 9))} {unit}, parent's budget is {_num(limit)}"))
+    return out
+
+
 def has_invalid(findings: Sequence[Finding]) -> bool:
     """True when any finding rejects the document."""
     return any(f.kind == "invalid" for f in findings)

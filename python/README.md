@@ -47,6 +47,7 @@ if has_invalid(findings):
 | `validate_order(order)` | O1–O4 |
 | `validate_report(report, order)` | R1–R12 |
 | `validate_child_order(child, parent)` | C1–C3: a sub-order may only narrow its parent's budget, tools and deadline |
+| `validate_child_budgets(child, parent, siblings)` | C4: a parent's sub-orders together stay within its budget. `siblings` are `{"order": ..., "state": ...}` |
 | `is_work_order(value)`, `is_work_report(value)` | Structure only (O1, R1) |
 | `tool_allowed(tool, patterns)`, `pattern_covered(child, parents)` | Tool pattern matching (`server/tool`, `server/*`, `*`) |
 

@@ -6,7 +6,7 @@ import { signPass } from "./pass.ts";
 import type { PassKey } from "./pass.ts";
 import { MemoryStore } from "./store.ts";
 import type { DeskStore } from "./store.ts";
-import { hasInvalid, validateChildOrder, validateOrder, validateReport } from "./validate.ts";
+import { hasInvalid, validateChildBudgets, validateChildOrder, validateOrder, validateReport } from "./validate.ts";
 import { ORDER_SPEC, REPORT_SPEC } from "./types.ts";
 import type {
   Action, AgentRef, Finding, OrderRecord, OrderSummary, State,
@@ -127,7 +127,8 @@ export class WorkDesk {
   // ---- manager actions ------------------------------------------------------
 
   /**
-   * Issues a new order. With `parent_id`, only the parent's worker may create it, and only narrower (§8).
+   * Issues a new order. With `parent_id`, only the parent's worker may create it, only narrower, and only
+   * while the parent's sub-orders together stay within its budget (§8).
    * With `continues`, the earlier order must be finished, be the same manager's, and not be continued yet (§4.5).
    */
   async create(input: WorkOrderInput, actor: AgentRef): Promise<OrderRecord> {
@@ -147,8 +148,12 @@ export class WorkDesk {
       const parent = await this.get(order.parent_id);
       if (isTerminal(parent.state)) throw new AwlError("INVALID_TRANSITION", `parent order "${order.parent_id}" is ${parent.state}`);
       if (actor !== parent.order.to) throw new AwlError("FORBIDDEN", `only the parent's worker can split order "${order.parent_id}"`);
+      if (parent.state === "offered") throw new AwlError("INVALID_TRANSITION", `parent order "${order.parent_id}" must be accepted before it can be split`);
       const childFindings = validateChildOrder(order, parent.order);
       if (childFindings.length) throw new AwlError("VALIDATION_FAILED", "sub-order exceeds its parent's authority", childFindings);
+      const siblings = (await this.store.list()).filter((r) => r.order.parent_id === order.parent_id);
+      const budgetFindings = validateChildBudgets(order, parent.order, siblings);
+      if (budgetFindings.length) throw new AwlError("VALIDATION_FAILED", "sub-orders would exceed their parent's budget", budgetFindings);
     }
 
     if (order.continues) {

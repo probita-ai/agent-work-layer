@@ -5,6 +5,15 @@
 ### Added
 
 - Conformance vectors (#4) in `conformance/`: JSON documents with the findings a validator must report, at least one passing and one failing vector for every rule (O1–O4, R1–R12, C1–C3). `conformance/README.md` describes the format and how findings are matched. The TypeScript and Python test suites run every vector.
+- Rule C4 (#25), SPEC.md §8: a parent's sub-orders together must stay within its budget. C1 checked each sub-order on its own, so two children could each take the parent's whole budget.
+  - Counts `usd`, `tokens` and `tool_calls`, not `seconds`. Declined sub-orders don't count; cancelled, expired and approved ones count in full. Sums allow 10⁻⁹ of floating-point error.
+  - `validateChildBudgets(child, parent, siblings)` in `agent-work-layer` and `agent-work-layer/validate`; `validate_child_budgets` in the Python package.
+  - `WorkDesk.create` (and `create_work_order` over MCP) rejects a sub-order that breaks C4 with `VALIDATION_FAILED`.
+  - `conformance/vectors/C4.json`, with a new `siblings` check.
+
+### Changed
+
+- A desk may now refuse a sub-order it used to accept, when the parent's earlier sub-orders already hold its budget. Existing sub-orders are not re-checked, and no document becomes invalid.
 
 ## 0.5.0 — 2026-10-17
 

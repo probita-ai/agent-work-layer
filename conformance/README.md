@@ -6,7 +6,7 @@ Both implementations in this repo run every vector: [packages/core/test/conforma
 
 ## Files
 
-`vectors/<rule>.json` holds the vectors for one rule, from `O1.json` to `C3.json`. Each rule has at least one vector that passes and one that fails.
+`vectors/<rule>.json` holds the vectors for one rule, from `O1.json` to `C4.json`. Each rule has at least one vector that passes and one that fails.
 
 ```json
 {
@@ -30,9 +30,10 @@ Both implementations in this repo run every vector: [packages/core/test/conforma
 | `check` | Which checks to run, and on what (below). |
 | `description` | The rule's text from the spec. |
 | `vectors[].name` | What the vector shows. |
-| `vectors[].order` | A Work Order. For `child`, the sub-order. |
+| `vectors[].order` | A Work Order. For `child` and `siblings`, the new sub-order. |
 | `vectors[].report` | `report` only: the Work Report to check against `order`. |
-| `vectors[].parent` | `child` only: the parent order. |
+| `vectors[].parent` | `child` and `siblings` only: the parent order. |
+| `vectors[].siblings` | `siblings` only: the parent's existing sub-orders, each `{state, order}`. |
 | `vectors[].expect` | The findings, each `{rule, kind, path?}`. Empty when the document is valid. |
 
 | `check` | Run | Rules |
@@ -40,8 +41,9 @@ Both implementations in this repo run every vector: [packages/core/test/conforma
 | `order` | the order checks on `order` | O1–O4 |
 | `report` | the report checks on `report` against `order` | R1–R12 |
 | `child` | the sub-order checks on `order` against `parent` | C1–C3 |
+| `siblings` | the sibling budget check on `order` against `parent` and `siblings`, the parent's existing sub-orders as `{state, order}` | C4 |
 
-Every check runs, not only the file's rule. A vector changes one thing from a valid document, so the only findings expected are for the file's rule. The orders in `report` and `child` vectors are valid; report checks assume a valid order.
+Every check runs, not only the file's rule. A vector changes one thing from a valid document, so the only findings expected are for the file's rule. The orders in `report`, `child` and `siblings` vectors are valid; report checks assume a valid order.
 
 ## Matching
 
@@ -50,7 +52,7 @@ A validator passes a vector when:
 1. every entry in `expect` matches at least one finding it reports, and
 2. every finding it reports matches at least one entry in `expect`.
 
-A finding matches an entry when `rule` and `kind` are equal and, if the entry has a `path`, the paths are equal. Paths are JSON Pointers into the checked document (`/` for the document itself); for `child` vectors they point into the sub-order.
+A finding matches an entry when `rule` and `kind` are equal and, if the entry has a `path`, the paths are equal. Paths are JSON Pointers into the checked document (`/` for the document itself); for `child` and `siblings` vectors they point into the new sub-order.
 
 Messages are not compared. Neither is the number of findings per entry: when O1, R1 or R11 fail, how many schema errors a JSON Schema library reports for one mistake varies, so matching only asks that each expected finding is there and nothing else is. Every vector here gives a `path`; an entry may leave it out where JSON Schema libraries turn out to place the same error differently.
 

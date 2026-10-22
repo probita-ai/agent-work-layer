@@ -434,6 +434,29 @@ describe("sub-orders", () => {
     assert.equal(record.state, "submitted");
   });
 
+  test("a sub-order must be accepted before it can delegate", async () => {
+    const { desk } = newDesk();
+    await workingOrder(desk);
+    const child = await desk.create(childInput({ budget: { usd: 2, tool_calls: 5 } }), WORKER);
+    const grandchildInput = orderInput({
+      to: STRANGER,
+      parent_id: child.order.id,
+      budget: { usd: 2, tool_calls: 5 },
+      tools: ["calc/ratio"],
+    });
+    await rejectsWith(desk.create(grandchildInput, HELPER), "INVALID_TRANSITION");
+
+    await desk.accept(child.order.id, HELPER);
+    const grandchild = await desk.create(grandchildInput, HELPER);
+    await desk.accept(grandchild.order.id, STRANGER);
+    await desk.start(grandchild.order.id, STRANGER);
+    await rejectsWith(desk.decline(child.order.id, HELPER), "INVALID_TRANSITION");
+    await rejectsWith(
+      desk.create(childInput({ budget: { usd: 2, tool_calls: 5 } }), WORKER),
+      "VALIDATION_FAILED",
+    );
+  });
+
   test("the parent must exist", async () => {
     const { desk } = newDesk();
     await rejectsWith(desk.create(childInput({ parent_id: "missing" }), WORKER), "NOT_FOUND");

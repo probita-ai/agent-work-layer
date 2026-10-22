@@ -158,6 +158,7 @@ export class WorkDesk {
       const parent = await this.get(order.parent_id);
       if (isTerminal(parent.state)) throw new AwlError("INVALID_TRANSITION", `parent order "${order.parent_id}" is ${parent.state}`);
       if (actor !== parent.order.to) throw new AwlError("FORBIDDEN", `only the parent's worker can split order "${order.parent_id}"`);
+      if (parent.state === "offered") throw new AwlError("INVALID_TRANSITION", `parent order "${order.parent_id}" must be accepted before it can be split`);
       const childFindings = validateChildOrder(order, parent.order);
       if (childFindings.length) throw new AwlError("VALIDATION_FAILED", "sub-order exceeds its parent's authority", childFindings);
       const budgetFindings = validateChildBudgets(order, parent.order, await this.subOrders(order.parent_id));

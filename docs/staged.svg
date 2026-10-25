@@ -1,0 +1,84 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 792 492" width="792" height="492" role="img" aria-label="Staged tools: the worker's read, filings/search, goes through the gateway to the real server at once. Its write, gmail/send, is held by the gateway, counted and logged with its arguments, and the worker gets the placeholder pending:gmail/send#3. The worker reports with the call listed in effects. If the manager approves, awl-desk gateway --commit runs the effect once, in order; on rework it is dropped and nothing has to be undone.">
+<style>
+svg{--bg:#f4f5f8;--surface:#ffffff;--fg:#171b24;--muted:#5a6376;--line:#c8cdd8;--accent:#2b57c4;--new:#c97a06;--new-bg:#fff4df;--ok:#1d8a59;--stop:#b8402f;
+--sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;--mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+@media (prefers-color-scheme: dark){svg{--bg:#0f1218;--surface:#171b24;--fg:#e6e9f0;--muted:#98a1b3;--line:#353c4a;--accent:#84a6ff;--new:#f0a83c;--new-bg:#2b2214;--ok:#4fc58c;--stop:#ef7a68}}
+.frame{fill:var(--bg)}
+.bx { fill: var(--surface); stroke: var(--line); stroke-width: 1.3; }
+.bx-new { fill: var(--new-bg); stroke: var(--new); stroke-width: 1.8; }
+.life { stroke: var(--line); stroke-width: 1.2; stroke-dasharray: 4 4; }
+.ln-a { stroke: var(--accent); stroke-width: 2; fill: none; }
+.ln-new { stroke: var(--new); stroke-width: 2.4; fill: none; }
+.ln-new-d { stroke: var(--new); stroke-width: 1.8; fill: none; stroke-dasharray: 5 4; }
+.ln-ok { stroke: var(--ok); stroke-width: 2.4; fill: none; }
+.mk-a { fill: var(--accent); } .mk-n { fill: var(--new); } .mk-ok { fill: var(--ok); }
+.t { fill: var(--fg); font: 13px var(--sans); }
+.tb { font-weight: 600; }
+.ts { fill: var(--muted); font: 12px var(--sans); }
+.tm { fill: var(--muted); font: 500 11px var(--mono); letter-spacing: .06em; }
+.tf { fill: var(--fg); font: 12px var(--mono); }
+.tk { fill: var(--new); font: 500 12px var(--mono); }
+.t-new { fill: var(--new); } .t-ok { fill: var(--ok); } .t-stop { fill: var(--stop); } .t-acc { fill: var(--accent); }
+</style>
+<defs>
+  <marker id="aha" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk-a"/></marker>
+  <marker id="ahn" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk-n"/></marker>
+  <marker id="ahok" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk-ok"/></marker>
+</defs>
+<rect class="frame" x="0" y="0" width="792" height="492" rx="12"/>
+
+<text class="tm" x="32" y="36">STAGED TOOLS · WRITES WAIT FOR THE MANAGER'S REVIEW</text>
+
+<!-- actors -->
+<rect class="bx" x="35" y="54" width="150" height="58" rx="8"/>
+<text class="t tb" x="110" y="78" text-anchor="middle">Worker</text>
+<text class="ts" x="110" y="97" text-anchor="middle">does the job</text>
+<rect class="bx" x="225" y="54" width="150" height="58" rx="8"/>
+<text class="t tb" x="300" y="78" text-anchor="middle">Manager</text>
+<text class="ts" x="300" y="97" text-anchor="middle">reviews the report</text>
+<rect class="bx-new" x="415" y="54" width="150" height="58" rx="8"/>
+<text class="t tb" x="490" y="78" text-anchor="middle">Gateway</text>
+<text class="ts" x="490" y="97" text-anchor="middle">awl-desk gateway</text>
+<rect class="bx" x="605" y="54" width="150" height="58" rx="8"/>
+<text class="t tb" x="680" y="78" text-anchor="middle">Real MCP servers</text>
+<text class="ts" x="680" y="97" text-anchor="middle">filings, gmail, …</text>
+
+<!-- lifelines -->
+<line class="life" x1="110" y1="112" x2="110" y2="412"/>
+<line class="life" x1="300" y1="112" x2="300" y2="412"/>
+<line class="life" x1="490" y1="112" x2="490" y2="412"/>
+<line class="life" x1="680" y1="112" x2="680" y2="412"/>
+
+<!-- 1. a read runs now -->
+<text class="tf" x="120" y="154">filings/search</text>
+<line class="ln-a" x1="110" y1="164" x2="486" y2="164" marker-end="url(#aha)"/>
+<line class="ln-a" x1="490" y1="164" x2="676" y2="164" marker-end="url(#aha)"/>
+<text class="ts t-acc" x="585" y="154" text-anchor="middle">forwarded: reads run now</text>
+
+<!-- 2. a staged write is held -->
+<text class="tf" x="120" y="204">gmail/send { to: "cfo@…" }</text>
+<line class="ln-new" x1="110" y1="214" x2="486" y2="214" marker-end="url(#ahn)"/>
+<rect class="bx-new" x="415" y="226" width="150" height="48" rx="6"/>
+<text class="t tb t-new" x="490" y="245" text-anchor="middle">held, not forwarded</text>
+<text class="ts" x="490" y="263" text-anchor="middle">counted · logged with args</text>
+<text class="ts t-stop" x="585" y="214" text-anchor="middle">nothing reaches gmail</text>
+
+<!-- 3. placeholder back -->
+<line class="ln-new-d" x1="486" y1="302" x2="114" y2="302" marker-end="url(#ahn)"/>
+<text class="tk" x="470" y="294" text-anchor="end">pending:gmail/send#3</text>
+
+<!-- 4. report with effects -->
+<text class="t" x="120" y="340">report + effects</text>
+<line class="ln-new" x1="110" y1="350" x2="296" y2="350" marker-end="url(#ahn)"/>
+
+<!-- 5. approve → commit -->
+<text class="t tb t-ok" x="310" y="388">approve → --commit</text>
+<line class="ln-ok" x1="300" y1="398" x2="486" y2="398" marker-end="url(#ahok)"/>
+<line class="ln-ok" x1="490" y1="398" x2="676" y2="398" marker-end="url(#ahok)"/>
+<text class="ts t-ok" x="585" y="388" text-anchor="middle">runs once, in order</text>
+
+<text class="ts t-stop" x="300" y="432" text-anchor="middle">rework → dropped: nothing ran, nothing to undo</text>
+
+<text class="ts" x="32" y="462">The manager may approve only some effects. A later effect can use an earlier one's result:</text>
+<text class="tf" x="32" y="480">{ "$ref": "gmail/draft#2", "pointer": "/structuredContent/id" }</text>
+</svg>

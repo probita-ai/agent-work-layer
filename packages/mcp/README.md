@@ -23,6 +23,12 @@ claude mcp add awl -e AWL_STORE="$HOME/.awl" -e AWL_ACTOR=agent:worker  -- npx -
 
 Any MCP client that starts stdio servers works the same way.
 
+To enforce an order while the worker works, and to hold back its [staged](#staged-tools-run-writes-only-after-approval) writes until the manager approves, give the worker its real tools through the [gateway](#gateway-enforce-an-order-while-the-worker-works) instead of directly:
+
+```sh
+claude mcp add work -e AWL_STORE="$HOME/.awl" -- npx -y agent-work-layer-mcp gateway --order wo_123 --config upstream.json
+```
+
 ## Command
 
 ```sh
@@ -164,6 +170,8 @@ The gateway cannot measure `usd` or `tokens`; the desk still checks those when t
 Each logged call, and each result's `_meta`, also records the authority it ran under: the order id (`awl/order`), the report attempt in progress (`awl/attempt`) and, when the desk issues passes, the pass's `jti` (`awl/jti`).
 
 ### Staged tools: run writes only after approval
+
+<p align="center"><img src="https://raw.githubusercontent.com/probita-ai/agent-work-layer/main/docs/staged.svg" alt="The worker's read goes through the gateway at once; its staged write is held and logged, and the worker gets pending:gmail/send#3. The report lists it in effects; on approve, --commit runs it once; on rework it is dropped" width="760"></p>
 
 An order's `staged` tools are ones whose calls should wait for the manager's review ([SPEC.md §4.6](https://github.com/probita-ai/agent-work-layer/blob/main/SPEC.md#46-staged-tools)). The gateway doesn't forward them:
 

@@ -22,7 +22,7 @@ Agent Cards say who an agent is. A2A carries messages between agents. MCP connec
 
 <p align="center"><img src="docs/fields.svg" alt="Each Work Report field answers a Work Order field: evidence proves criteria, cost stays within budget, tools used stay within allowed tools" width="760"></p>
 
-More diagrams: [message sequence](docs/sequence.svg) · [lifecycle](docs/lifecycle.svg) · [delegation](docs/delegation.svg) · [handoff](docs/handoff.svg) · [authenticated actor](docs/authenticated-actor.svg) · [Delegation Pass](docs/delegation-pass.svg) · [JWS vs JWT](docs/jws-vs-jwt.svg)
+More diagrams: [message sequence](docs/sequence.svg) · [lifecycle](docs/lifecycle.svg) · [delegation](docs/delegation.svg) · [handoff](docs/handoff.svg) · [staged tools](docs/staged.svg) · [authenticated actor](docs/authenticated-actor.svg) · [Delegation Pass](docs/delegation-pass.svg) · [JWS vs JWT](docs/jws-vs-jwt.svg)
 
 ## Install
 
@@ -131,6 +131,8 @@ Rejecting a report doesn't unsend an email. For tools whose effects you want to 
 await desk.create({ ...job, tools: ["filings/*", "gmail/*"], staged: ["gmail/send"] }, "agent:manager");
 ```
 
+<p align="center"><img src="docs/staged.svg" alt="The worker's read, filings/search, goes through the gateway to the real server at once. Its write, gmail/send, is held by the gateway, counted and logged, and the worker gets pending:gmail/send#3. The worker reports with the call in effects; on approve, awl-desk gateway --commit runs it once; on rework it is dropped and nothing has to be undone" width="760"></p>
+
 The worker's [MCP gateway](packages/mcp/README.md#staged-tools-run-writes-only-after-approval) then holds back calls to `gmail/send`: it counts and logs each one and returns a placeholder (`pending:gmail/send#4`). The worker lists them in its report's `effects`, which the manager reviews with the rest of the report. Approving lets the gateway run them; rework drops them, and since they never ran, there is nothing to undo. Reads still run normally. A sub-order can't allow a tool its parent stages (C5).
 
 A staged call can use an earlier one's result: pass `{ "$ref": "github/create_issue#3", "pointer": "/structuredContent/number" }` as an argument, and the gateway fills it in when it runs the effects. The manager can also approve only some effects:
@@ -188,7 +190,9 @@ npx -y agent-work-layer-mcp serve --keys keys.json        # { "keys": { "<key>":
 claude mcp add --transport http awl http://127.0.0.1:8787/mcp --header "Authorization: Bearer $AWL_KEY"
 ```
 
-Tools: `create_work_order`, `list_work_orders`, `get_work_order`, `accept_work_order`, `decline_work_order`, `start_work_order`, `submit_work_report`, `answer_question`, `review_work_report`, `cancel_work_order`, `wait_for_update`, and `renew_work_pass` when the desk issues [Delegation Passes](#delegation-pass).
+Tools: `create_work_order`, `list_work_orders`, `get_work_order`, `accept_work_order`, `decline_work_order`, `start_work_order`, `report_progress`, `submit_work_report`, `answer_question`, `review_work_report`, `cancel_work_order`, `wait_for_update`, `get_track_record`, and `renew_work_pass` when the desk issues [Delegation Passes](#delegation-pass).
+
+To enforce an order while the worker works, and to hold its [staged](#hold-writes-until-the-report-is-approved) writes until you approve, connect the worker to its real MCP servers through the gateway: `npx -y agent-work-layer-mcp gateway --order <id> --config upstream.json`. After approval, `--commit` runs the approved writes. See [the gateway docs](packages/mcp/README.md#gateway-enforce-an-order-while-the-worker-works).
 
 To embed the server in your own process or transport (`npm install agent-work-layer agent-work-layer-mcp`):
 
@@ -231,6 +235,8 @@ declined                                blocked                          working
 
 Any active state ──cancel──▶ cancelled   ·   deadline or budget exceeded ──▶ expired
 ```
+
+While `working`, the worker can post progress notes. They are recorded as events but don't change the state ([SPEC.md §6.2](SPEC.md#62-progress)).
 
 | Action | Who |
 |---|---|

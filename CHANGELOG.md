@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.7.1 — 2026-10-25
+
+Both packages: `agent-work-layer` 0.7.1 and `agent-work-layer-mcp` 0.7.1. Documentation only; no code changes.
+
+### Changed
+
+- READMEs (#32): a staged-tools diagram (`docs/staged.svg`), the `report_progress` and `get_track_record` tools in the tool list, how to run a worker's tools through the gateway so staged writes are held, and progress notes under Lifecycle. The npm pages now show them.
+
 ## 0.7.0 — 2026-10-24
 
 Both packages: `agent-work-layer` 0.7.0 and `agent-work-layer-mcp` 0.7.0. Spec v0.4: Work Orders are written as `awl/work-order@0.4` and Work Reports as `awl/work-report@0.3`. Every earlier version is still read.

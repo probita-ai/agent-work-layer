@@ -6,10 +6,10 @@ import { signPass } from "./pass.ts";
 import type { PassKey } from "./pass.ts";
 import { MemoryStore } from "./store.ts";
 import type { DeskStore } from "./store.ts";
-import { hasInvalid, heldBySubOrders, validateChildBudgets, validateChildOrder, validateOrder, validateOwnCost, validateReport } from "./validate.ts";
-import { ORDER_SPEC, REPORT_SPEC } from "./types.ts";
+import { effectReferences, hasInvalid, heldBySubOrders, validateChildBudgets, validateChildOrder, validateOrder, validateOwnCost, validateReport } from "./validate.ts";
+import { ORDER_SPEC, REPORT_SPEC, UNITS } from "./types.ts";
 import type {
-  Action, AgentRef, Amounts, Finding, OrderRecord, OrderSummary, State,
+  Action, AgentRef, Amounts, Finding, OrderRecord, OrderSummary, State, TrackRecord,
   WorkEvent, WorkOrder, WorkOrderInput, WorkReport, WorkReportInput,
 } from "./types.ts";
 
@@ -46,6 +46,16 @@ export interface ListFilter {
   parent_id?: string;
   /** Orders that continue this order id. */
   continues?: string;
+}
+
+export interface ReviewOptions {
+  /** On approve: the refs of the report's effects to run. Default: all of them (§4.6). */
+  effects?: string[];
+}
+
+export interface TrackRecordOptions {
+  /** Count only orders created at or after this time (RFC 3339). */
+  since?: string;
 }
 
 export interface WaitOptions {
@@ -123,6 +133,36 @@ export class WorkDesk {
       .map(summarize);
   }
 
+  /** A worker's record on this desk (§6.3): what happened to the orders addressed to it. */
+  async trackRecord(agent: AgentRef, options: TrackRecordOptions = {}): Promise<TrackRecord> {
+    requireActor(agent);
+    const since = options.since === undefined ? undefined : Date.parse(options.since);
+    if (since !== undefined && Number.isNaN(since)) throw new AwlError("BAD_REQUEST", `since "${options.since}" is not a timestamp`);
+    const records = await Promise.all((await this.store.list()).map((r) => this.#expireIfDue(r)));
+    const out: TrackRecord = {
+      agent, orders: 0, active: 0, approved: 0, declined: 0, expired: 0, cancelled: 0, approved_first_time: 0, reworks: 0,
+      reports: { done: 0, blocked: 0, failed: 0 }, spent: {}, budget: {},
+      ...(options.since !== undefined ? { since: options.since } : {}),
+    };
+    for (const r of records) {
+      if (r.order.to !== agent || (since !== undefined && Date.parse(r.order.created_at) < since)) continue;
+      out.orders++;
+      if (!isTerminal(r.state)) out.active++;
+      else out[r.state as "approved" | "declined" | "expired" | "cancelled"]++;
+      const reworks = r.events.filter((e) => e.action === "rework").length;
+      out.reworks += reworks;
+      if (r.state === "approved" && !reworks) out.approved_first_time++;
+      for (const report of r.reports) out.reports[report.status]++;
+      const latest = r.reports.at(-1);
+      if (!latest) continue;
+      for (const unit of UNITS) {
+        if (latest.cost[unit] !== undefined) out.spent[unit] = round((out.spent[unit] ?? 0) + latest.cost[unit]);
+        if (r.order.budget[unit] !== undefined) out.budget[unit] = round((out.budget[unit] ?? 0) + r.order.budget[unit]);
+      }
+    }
+    return out;
+  }
+
   /** Resolves once the order has an event newer than `sinceSeq`, or when the timeout passes. */
   async waitForChange(id: string, sinceSeq: number, options: WaitOptions = {}): Promise<OrderRecord> {
     const { timeoutMs = 25_000, pollMs = 250, signal } = options;
@@ -187,10 +227,36 @@ export class WorkDesk {
     return this.#act(id, "answer", actor, answer);
   }
 
-  async review(id: string, actor: AgentRef, decision: "approve" | "rework", reason?: string): Promise<OrderRecord> {
+  /**
+   * Approves a submitted report or sends it back for rework. An approval may name the effects to run
+   * (§4.6); it must keep every effect that an approved one uses.
+   */
+  async review(id: string, actor: AgentRef, decision: "approve" | "rework", reason?: string, options: ReviewOptions = {}): Promise<OrderRecord> {
     if (decision !== "approve" && decision !== "rework") throw new AwlError("BAD_REQUEST", `unknown decision "${decision}"`);
     if (decision === "rework" && !reason?.trim()) throw new AwlError("BAD_REQUEST", "rework needs a reason the worker can act on");
-    return this.#act(id, decision, actor, reason);
+    const chosen = options.effects;
+    if (chosen === undefined) return this.#act(id, decision, actor, reason);
+    if (decision !== "approve") throw new AwlError("BAD_REQUEST", "only an approval can choose effects");
+    requireActor(actor);
+
+    let event!: WorkEvent;
+    const record = await this.#mutate(id, (rec) => {
+      event = this.#move(rec, "approve", actor, reason);
+      const listed = rec.reports.at(-1)?.effects ?? [];
+      const keep = new Set(chosen);
+      for (const ref of keep) {
+        if (!listed.some((e) => e.ref === ref)) throw new AwlError("BAD_REQUEST", `the report lists no effect "${ref}"`);
+      }
+      for (const e of listed) {
+        if (!keep.has(e.ref)) continue;
+        const missing = effectReferences(e.arguments).find((r) => !keep.has(r.ref));
+        if (missing) throw new AwlError("BAD_REQUEST", `effect "${e.ref}" uses the result of "${missing.ref}", which is not approved`);
+      }
+      // In the report's order, so the record reads the way the effects will run.
+      event.effects = listed.filter((e) => keep.has(e.ref)).map((e) => e.ref);
+    });
+    this.#emit(event, record);
+    return record;
   }
 
   async cancel(id: string, actor: AgentRef, reason?: string): Promise<OrderRecord> {
@@ -198,6 +264,24 @@ export class WorkDesk {
   }
 
   // ---- worker actions -------------------------------------------------------
+
+  /** Records a progress note while the order is `working` (§6.2). Changes no state. */
+  async progress(id: string, actor: AgentRef, note: string, percent?: number): Promise<OrderRecord> {
+    requireActor(actor);
+    if (!note?.trim()) throw new AwlError("BAD_REQUEST", "a progress note cannot be empty");
+    if (percent !== undefined && !(Number.isFinite(percent) && percent >= 0 && percent <= 100)) {
+      throw new AwlError("BAD_REQUEST", "percent must be between 0 and 100");
+    }
+    let event!: WorkEvent;
+    const record = await this.#mutate(id, (rec) => {
+      if (actor !== rec.order.to) throw new AwlError("FORBIDDEN", `"${actor}" may not report progress on order "${id}"`);
+      if (rec.state !== "working") throw new AwlError("INVALID_TRANSITION", `cannot report progress on an order that is ${rec.state}`);
+      event = this.#record(rec, actor, "progress", "working", note);
+      if (percent !== undefined) event.percent = percent;
+    });
+    this.#emit(event, record);
+    return record;
+  }
 
   async accept(id: string, actor: AgentRef): Promise<OrderRecord> {
     return this.#act(id, "accept", actor);
@@ -356,6 +440,8 @@ export class WorkDesk {
     return record;
   }
 }
+
+const round = (n: number) => Number(n.toFixed(9));
 
 function requireActor(actor: unknown): asserts actor is string {
   if (typeof actor !== "string" || !actor.trim()) throw new AwlError("BAD_REQUEST", "actor is required");

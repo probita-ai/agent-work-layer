@@ -6,6 +6,7 @@ from pydantic import ValidationError
 
 from agent_work_layer import (
     Criterion,
+    Effect,
     Evidence,
     WorkOrder,
     WorkReport,
@@ -40,7 +41,7 @@ def test_builds_an_order_in_python():
     o = build_order()
     doc = o.to_dict()
     assert doc["from"] == "agent:manager"
-    assert doc["spec"] == "awl/work-order@0.3"
+    assert doc["spec"] == "awl/work-order@0.4"
     assert doc["created_at"] == "2026-01-01T09:00:00.000Z"
     assert doc["deadline"] == "2026-01-01T11:00:00.000Z"
     assert doc["budget"] == {"usd": 2, "tool_calls": 20}
@@ -109,6 +110,32 @@ def test_an_order_can_continue_an_earlier_one():
 
 def test_reads_every_order_version():
     doc = build_order().to_dict()
-    for spec in ("awl/work-order@0.1", "awl/work-order@0.2", "awl/work-order@0.3"):
+    for spec in ("awl/work-order@0.1", "awl/work-order@0.2", "awl/work-order@0.3", "awl/work-order@0.4"):
         assert validate_order({**doc, "spec": spec}) == []
-    assert [f.rule for f in validate_order({**doc, "spec": "awl/work-order@0.4"})] == ["O1"]
+    assert [f.rule for f in validate_order({**doc, "spec": "awl/work-order@0.5"})] == ["O1"]
+
+
+def test_staged_tools_and_effects():
+    order = build_order(tools=["filings/*", "gmail/*"], staged=["gmail/send"])
+    assert order.to_dict()["staged"] == ["gmail/send"]
+    assert validate_order(order) == []
+    assert [f.rule for f in validate_order(build_order(staged=["gmail/send"]))] == ["O5"]
+
+    effect = Effect(ref="gmail/send#4", tool="gmail/send", arguments={"to": "cfo@example.com"})
+    report = WorkReport(
+        order_id="wo_42",
+        from_="agent:researcher",
+        status="done",
+        result=WorkResult(summary="sent"),
+        evidence=[Evidence(criterion="c1", type="tool_call", ref="gmail/send#4")],
+        cost={"usd": 1, "tool_calls": 1},
+        finished_at=NOW + timedelta(hours=1),
+        tools_used=["gmail/send"],
+        effects=[effect],
+    )
+    assert report.to_dict()["spec"] == "awl/work-report@0.3"
+    assert report.to_dict()["effects"] == [{"ref": "gmail/send#4", "tool": "gmail/send", "arguments": {"to": "cfo@example.com"}}]
+    assert validate_report(report, order) == []
+    assert [f.rule for f in validate_report(report, build_order(tools=["filings/*", "gmail/*"]))] == ["R14"]
+    with pytest.raises(ValidationError):
+        Effect(ref="gmail/send#4", tool="gmail/send")

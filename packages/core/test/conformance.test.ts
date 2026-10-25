@@ -13,7 +13,7 @@ type Sibling = { state: State; order: WorkOrder };
 type Vector = { name: string; order: WorkOrder; report?: unknown; parent?: WorkOrder; siblings?: Sibling[]; sub_orders?: Sibling[]; expect: Expected[] };
 type VectorFile = { rule: string; check: "order" | "report" | "child" | "siblings" | "own-cost"; description: string; vectors: Vector[] };
 
-const RULES = ["O1", "O2", "O3", "O4", "R1", "R2", "R3", "R4", "R5", "R6", "R7", "R8", "R9", "R10", "R11", "R12", "R13", "C1", "C2", "C3", "C4"];
+const RULES = ["O1", "O2", "O3", "O4", "O5", "R1", "R2", "R3", "R4", "R5", "R6", "R7", "R8", "R9", "R10", "R11", "R12", "R13", "R14", "R15", "R16", "C1", "C2", "C3", "C4", "C5"];
 
 const files: VectorFile[] = readdirSync(dir)
   .filter((f) => f.endsWith(".json"))

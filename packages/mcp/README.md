@@ -40,16 +40,18 @@ Flags win over the environment. Installed locally, the command is `awl-desk`.
 
 | Tool | Who | What it does |
 |---|---|---|
-| `create_work_order` | manager | Issue an order: goal, criteria, budget, deadline, tools, optional `handoff`, and `continues` to reissue a finished order |
+| `create_work_order` | manager | Issue an order: goal, criteria, budget, deadline, tools, optional `staged` tools, `handoff`, and `continues` to reissue a finished order |
 | `list_work_orders` | anyone | Find orders, e.g. `to=<you>, state=offered`, or `continues=<id>` to follow a reissued job |
 | `get_work_order` | anyone | Order, state, latest report, findings, events; the worker also gets its [pass](#delegation-passes) |
 | `accept_work_order` / `decline_work_order` | worker | Answer an offer |
 | `start_work_order` | worker | Begin work |
-| `submit_work_report` | worker | Report `done`, `blocked` or `failed`, with evidence and an optional `handoff` |
+| `report_progress` | worker | Post a progress note, optionally with percent done; changes no state |
+| `submit_work_report` | worker | Report `done`, `blocked` or `failed`, with evidence, staged `effects` and an optional `handoff` |
 | `answer_question` | manager or escalation contact | Unblock a worker |
-| `review_work_report` | manager | Approve, or send back for rework |
+| `review_work_report` | manager | Approve (staged effects may then run, or only the `effects` named), or send back for rework (they are dropped) |
 | `cancel_work_order` | manager | Stop an unfinished order |
-| `wait_for_update` | anyone | Wait for the next change to an order |
+| `wait_for_update` | anyone | Wait for the next change to an order, progress notes included |
+| `get_track_record` | anyone | A worker's record on this desk: outcomes, reworks, reports, spending against budget |
 | `renew_work_pass` | worker | A fresh [Delegation Pass](#delegation-passes); listed only when the desk issues passes |
 
 When a worker fails or gets stuck, it can fill in `handoff` (decisions, what it tried, open questions, next step). The manager passes that to the next worker in a new order, so the next worker doesn't start from nothing. See [SPEC.md §4.4](https://github.com/probita-ai/agent-work-layer/blob/main/SPEC.md#44-handoff).
@@ -143,7 +145,7 @@ claude mcp add work -e AWL_STORE="$HOME/.awl" -- npx -y agent-work-layer-mcp gat
 - Tools appear as `<server>__<tool>`, and only those the order's `tools` allow. Calls to others are refused.
 - Calls are refused once `budget.tool_calls` or `budget.seconds` is spent, and while the order is not `working`. Tool calls the order's sub-orders hold don't count as its own: with 20 tool calls and a sub-order holding 5, the order itself may make 15. An `accepted` order is started on its first call.
 - Each result ends with an evidence ref such as `filings/search#3`. Cite it as `{ "type": "tool_call", "ref": "filings/search#3" }`.
-- `awl_usage` returns `tools_used` and `cost` to copy into `submit_work_report`, and every call so far.
+- `awl_usage` returns `tools_used`, `cost` and staged `effects` to copy into `submit_work_report`, and every call so far.
 - Calls are logged to `<store>/calls/<id>.jsonl`. The log is reloaded on restart, so restarting does not reset the budget.
 
 | Flag | Environment | Default | Meaning |
@@ -153,12 +155,30 @@ claude mcp add work -e AWL_STORE="$HOME/.awl" -- npx -y agent-work-layer-mcp gat
 | `--store <dir>` | `AWL_STORE` | `./.awl` | The desk's folder; the call log goes in `calls/` |
 | `--actor <ref>` | `AWL_ACTOR` | the order's worker | Must be the order's worker |
 | `--observe` | | off | Log only, refuse nothing (see below) |
+| `--commit` | | off | Run the approved report's staged effects, print the results and exit (see below) |
 
 **Already enforce access with your own gateway or policy engine?** Run with `--observe` (in code, `enforce: false`). The gateway then lists every tool and refuses nothing. It still numbers and logs every call and reports usage. Calls the order would have refused are logged with a `violation` (`TOOL_NOT_ALLOWED`, `BUDGET_SPENT` or `ORDER_NOT_WORKING`), and the desk still catches them in the report (R5, R7).
 
 The gateway cannot measure `usd` or `tokens`; the desk still checks those when the report arrives. See [SPEC.md §9.1](https://github.com/probita-ai/agent-work-layer/blob/main/SPEC.md#91-mcp-gateway).
 
 Each logged call, and each result's `_meta`, also records the authority it ran under: the order id (`awl/order`), the report attempt in progress (`awl/attempt`) and, when the desk issues passes, the pass's `jti` (`awl/jti`).
+
+### Staged tools: run writes only after approval
+
+An order's `staged` tools are ones whose calls should wait for the manager's review ([SPEC.md §4.6](https://github.com/probita-ai/agent-work-layer/blob/main/SPEC.md#46-staged-tools)). The gateway doesn't forward them:
+
+1. The worker calls `gmail__send`. The gateway counts the call against `tool_calls`, logs it with its arguments, and returns `pending:gmail/send#4` instead of a result (`_meta["awl/staged"]` is `true`). Other tools run as usual.
+2. `awl_usage` lists the calls waiting as `effects`. The worker copies the ones it wants into its report, in the order they should run.
+3. The manager reviews the report, effects included. **Rework** drops them all; the worker stages again if it still wants them. A `blocked` report keeps them.
+4. Once the order is **approved**, run them:
+
+```sh
+npx -y agent-work-layer-mcp gateway --order wo_123 --config upstream.json --commit
+```
+
+`--commit` (in code, `gateway.commit()`) runs nothing unless the order is approved and every effect to run matches a staged call in the log: same ref, tool and arguments, made since the last rework. If the manager approved only some effects, only those run. It runs them in the report's order and logs each result with `commit: true`. A failed effect is recorded, not retried, and the effects after it still run. Running `--commit` again runs nothing twice. Before each call it logs a `running` line, so if the process dies mid-call, the next `--commit` records that effect as an error (it may have run) instead of running it again. While a commit runs, a `<log>.commit-lock` file keeps a second one from starting; if a commit crashed, check the log and remove the lock. Staged calls the report leaves out never run.
+
+To use an earlier staged call's result, pass a reference as an argument when making the staged call: `{"$ref": "github/create_issue#3", "pointer": "/structuredContent/number"}`. `--commit` fills it in from that effect's result, a `CallToolResult`. If that effect failed or was skipped, or has nothing at the pointer, the effect using it is skipped (`outcome: "skipped"`, with the reason).
 
 ## Delegation Passes
 
@@ -208,8 +228,10 @@ The gateway takes connected MCP clients for the real servers:
 ```ts
 import { createGateway } from "agent-work-layer-mcp";
 
-const { server, usage } = await createGateway({ desk, orderId: "wo_123", upstreams: { filings: filingsClient }, logFile: "./calls.jsonl" });
+const { server, usage, commit } = await createGateway({ desk, orderId: "wo_123", upstreams: { filings: filingsClient }, logFile: "./calls.jsonl" });
 await server.connect(transport);
+// After the manager approves: run the report's staged effects.
+const results = await commit();
 ```
 
 ## Upgrading from agent-work-layer 0.1

@@ -18,11 +18,11 @@ from jsonschema import Draft202012Validator, FormatChecker, ValidationError
 from jsonschema.exceptions import SchemaError
 from jsonschema.validators import extend
 
-ORDER_SPEC = "awl/work-order@0.3"
-REPORT_SPEC = "awl/work-report@0.2"
+ORDER_SPEC = "awl/work-order@0.4"
+REPORT_SPEC = "awl/work-report@0.3"
 #: Every spec version this package reads (SPEC.md §11).
-ORDER_SPECS = ("awl/work-order@0.1", "awl/work-order@0.2", ORDER_SPEC)
-REPORT_SPECS = ("awl/work-report@0.1", REPORT_SPEC)
+ORDER_SPECS = ("awl/work-order@0.1", "awl/work-order@0.2", "awl/work-order@0.3", ORDER_SPEC)
+REPORT_SPECS = ("awl/work-report@0.1", "awl/work-report@0.2", REPORT_SPEC)
 #: Budget and cost units (SPEC.md §4.2).
 UNITS = ("usd", "tokens", "tool_calls", "seconds")
 
@@ -249,6 +249,47 @@ def pattern_covered(child: str, parent: Sequence[str]) -> bool:
     return tool_allowed(child, parent)
 
 
+def _patterns_overlap(a: str, b: str) -> bool:
+    """Can some tool match both patterns?"""
+    if a == "*" or b == "*" or a == b:
+        return True
+    server_a, _, tool_a = a.partition("/")
+    server_b, _, tool_b = b.partition("/")
+    return server_a == server_b and "*" in (tool_a, tool_b)
+
+
+def _is_reference(value: Any) -> bool:
+    """An object whose members are ``$ref`` (a string) and, optionally, ``pointer`` (a string)."""
+    return (
+        isinstance(value, dict)
+        and isinstance(value.get("$ref"), str)
+        and isinstance(value.get("pointer", ""), str)
+        and all(k in ("$ref", "pointer") for k in value)
+    )
+
+
+def effect_references(arguments: Any) -> List[Dict[str, str]]:
+    """Every reference to an earlier effect's result in an effect's arguments (SPEC.md §4.6), in document order.
+
+    Each is ``{"ref", "pointer", "path"}``: the earlier effect, a JSON Pointer into its result, and a
+    JSON Pointer to the reference within the arguments.
+    """
+    out: List[Dict[str, str]] = []
+
+    def walk(value: Any, path: str) -> None:
+        if _is_reference(value):
+            out.append({"ref": value["$ref"], "pointer": value.get("pointer", ""), "path": path})
+        elif isinstance(value, list):
+            for i, v in enumerate(value):
+                walk(v, f"{path}/{i}")
+        elif isinstance(value, dict):
+            for k, v in value.items():
+                walk(v, path + _pointer([k]))
+
+    walk(arguments, "")
+    return out
+
+
 def is_work_order(value: Any) -> bool:
     """Structurally a Work Order (rule O1 only)."""
     return _order_shape.is_valid(_plain(value))
@@ -260,7 +301,7 @@ def is_work_report(value: Any) -> bool:
 
 
 def validate_order(order: Any) -> List[Finding]:
-    """Runs order checks O1–O4. Returns an empty list when the order is valid."""
+    """Runs order checks O1–O5. Returns an empty list when the order is valid."""
     order = _plain(order)
     shape = _schema_findings("O1", _order_shape.iter_errors(order))
     if shape:
@@ -281,14 +322,19 @@ def validate_order(order: Any) -> List[Finding]:
             _compile_user_schema(order["output_schema"])
         except SchemaError as e:
             out.append(Finding("O4", "invalid", "/output_schema", f"not a valid JSON Schema: {e.message}"))
+
+    for i, p in enumerate(order.get("staged", [])):
+        if not pattern_covered(p, order["tools"]):
+            out.append(Finding("O5", "invalid", f"/staged/{i}", f'staged "{p}" is not covered by the order\'s tools'))
     return out
 
 
 _MISSING = object()
+_CALL_NUMBER = re.compile(r"^[1-9][0-9]*\Z", re.ASCII)
 
 
 def validate_report(report: Any, order: Any) -> List[Finding]:
-    """Runs report checks R1–R12 against the order it answers. The order is assumed valid."""
+    """Runs report checks R1–R12 and R14–R16 against the order it answers. The order is assumed valid."""
     report, order = _plain(report), _plain(order)
     shape = _schema_findings("R1", _report_shape.iter_errors(report))
     if shape:
@@ -341,11 +387,29 @@ def validate_report(report: Any, order: Any) -> List[Finding]:
 
     if "started_at" in report and _time(report["started_at"]) > _time(report["finished_at"]):
         add("R12", "invalid", "/started_at", "started_at is after finished_at")
+
+    refs = set()
+    for i, e in enumerate(report.get("effects", [])):
+        if not tool_allowed(e["tool"], order.get("staged", [])):
+            add("R14", "invalid", f"/effects/{i}/tool", f'tool "{e["tool"]}" is not staged by this order')
+        n = e["ref"][len(e["tool"]) + 1 :]
+        if not e["ref"].startswith(e["tool"] + "#") or not _CALL_NUMBER.match(n):
+            add("R15", "invalid", f"/effects/{i}/ref", f'ref "{e["ref"]}" is not "{e["tool"]}#<n>"')
+        elif e["ref"] in refs:
+            add("R15", "invalid", f"/effects/{i}/ref", f'ref "{e["ref"]}" appears twice')
+        for r in effect_references(e["arguments"]):
+            path = f"/effects/{i}/arguments{r['path']}"
+            if r["ref"] not in refs:
+                add("R16", "invalid", path, f'"{r["ref"]}" is not an effect listed before this one')
+            elif r["pointer"] != "" and not r["pointer"].startswith("/"):
+                add("R16", "invalid", path, f'"{r["pointer"]}" is not a JSON Pointer')
+        refs.add(e["ref"])
     return out
 
 
 def validate_child_order(child: Any, parent: Any) -> List[Finding]:
-    """Runs sub-order checks C1–C3: a child order may only narrow its parent's authority."""
+    """Runs sub-order checks C1–C3 and C5: a child order may only narrow its parent's authority, and may not
+    call the tools its parent stages, since its effects would run when its own report is approved."""
     child, parent = _plain(child), _plain(parent)
     out: List[Finding] = []
     for unit in UNITS:
@@ -362,6 +426,10 @@ def validate_child_order(child: Any, parent: Any) -> List[Finding]:
             out.append(Finding("C2", "invalid", f"/tools/{i}", f'"{p}" is wider than the parent allows'))
     if _time(child["deadline"]) > _time(parent["deadline"]):
         out.append(Finding("C3", "invalid", "/deadline", "later than the parent's deadline"))
+    for i, p in enumerate(child["tools"]):
+        staged = next((s for s in parent.get("staged", []) if _patterns_overlap(p, s)), None)
+        if staged is not None:
+            out.append(Finding("C5", "invalid", f"/tools/{i}", f'"{p}" allows "{staged}", which the parent stages'))
     return out
 
 

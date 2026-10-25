@@ -16,6 +16,7 @@ export const GATEWAY_HELP = `awl-desk gateway ${VERSION} — enforce a Work Orde
 Usage:
   awl-desk gateway --order <id> --config <file> [--store <dir>] [--actor <agent-ref>] [--observe]
   awl-desk gateway --order <id> --config <file> --actor <agent-ref> --pass-keys <file> [--pass-file <file>] [--issuer <iss>]
+  awl-desk gateway --order <id> --config <file> --commit [--store <dir>]
 
 The config file lists the real MCP servers, in the same shape as .mcp.json:
   { "mcpServers": {
@@ -26,6 +27,12 @@ Tools appear as <server>__<tool>, and only those the order allows. Calls are log
 <store>/calls/<id>.jsonl; each result carries an evidence ref "<server>/<tool>#<n>".
 The awl_usage tool returns tools_used and cost for the work report.
 
+Calls to the order's staged tools are logged but not forwarded; the worker gets back a
+placeholder "pending:<server>/<tool>#<n>" and lists the call in its report's effects.
+
+--commit    Run the staged effects of the order's approved report (or those the approval
+            chose), in order, and print the results as JSON. Runs nothing unless the order is
+            approved and every effect matches a staged call in the log. No effect runs twice.
 --observe   Log only; refuse nothing. Calls the order would refuse are logged as violations.
             Use it when your own gateway or policy engine already enforces access.
 
@@ -60,19 +67,20 @@ function transportFor(name: string, config: ServerConfig) {
 
 export async function runGateway(args: string[]): Promise<void> {
   let values: {
-    order?: string; config?: string; store?: string; actor?: string; observe?: boolean; help?: boolean;
+    order?: string; config?: string; store?: string; actor?: string; observe?: boolean; commit?: boolean; help?: boolean;
     "pass-keys"?: string; "pass-file"?: string; issuer?: string;
   };
   try {
     ({ values } = parseArgs({
       args,
       options: {
-        order: { type: "string" }, config: { type: "string" }, store: { type: "string" }, actor: { type: "string" }, observe: { type: "boolean" },
+        order: { type: "string" }, config: { type: "string" }, store: { type: "string" }, actor: { type: "string" }, observe: { type: "boolean" }, commit: { type: "boolean" },
         "pass-keys": { type: "string" }, "pass-file": { type: "string" }, issuer: { type: "string" }, help: { type: "boolean", short: "h" },
       },
     }));
     if (!values.help && (!values.order || !values.config)) throw new Error("--order and --config are required");
     if (!values.help && values["pass-keys"] && !(values.actor ?? process.env.AWL_ACTOR)) throw new Error("--pass-keys needs --actor (or AWL_ACTOR)");
+    if (!values.help && values.commit && values["pass-keys"]) throw new Error("--commit reads the order from the store, so it does not take --pass-keys");
   } catch (e) {
     console.error(`awl-desk gateway: ${(e as Error).message}\n\n${GATEWAY_HELP}`);
     process.exit(2);
@@ -96,14 +104,25 @@ export async function runGateway(args: string[]): Promise<void> {
   // A missing or unreadable file means no pass, so the call is refused as PASS_INVALID.
   const pass = passFile ? async () => (await readFile(passFile, "utf8").catch(() => "")).trim() || undefined : process.env.AWL_PASS;
 
-  const { server } = await createGateway({
+  const options = {
     ...(passKeys ? { passKeys, pass, issuer: values.issuer } : { desk: new WorkDesk({ store: new FileStore(storeDir) }) }),
     orderId: values.order!,
     upstreams,
     actor: values.actor ?? process.env.AWL_ACTOR,
     logFile: join(storeDir, "calls", `${values.order}.jsonl`),
     enforce: !values.observe,
-  });
+  };
+  if (values.commit) {
+    try {
+      console.log(JSON.stringify(await (await createGateway(options)).commit(), null, 2));
+    } catch (e) {
+      console.error(`awl-desk gateway: ${(e as Error).message}`);
+      process.exitCode = 1;
+    }
+    await Promise.all(Object.values(upstreams).map((c) => c.close()));
+    return;
+  }
+  const { server } = await createGateway(options);
   server.onclose = () => void Promise.all(Object.values(upstreams).map((c) => c.close()));
   await server.connect(new StdioServerTransport());
 }

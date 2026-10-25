@@ -27,7 +27,7 @@ async function pair() {
 }
 
 describe("desk MCP server", () => {
-  test("exposes the eleven desk tools", async () => {
+  test("exposes the thirteen desk tools", async () => {
     const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
     await createDeskServer({ desk: new WorkDesk() }).connect(serverSide);
     const client = new Client({ name: "t", version: "0" });
@@ -36,7 +36,8 @@ describe("desk MCP server", () => {
     const names = (await client.listTools()).tools.map((t) => t.name).sort();
     assert.deepEqual(names, [
       "accept_work_order", "answer_question", "cancel_work_order", "create_work_order", "decline_work_order",
-      "get_work_order", "list_work_orders", "review_work_report", "start_work_order", "submit_work_report", "wait_for_update",
+      "get_track_record", "get_work_order", "list_work_orders", "report_progress", "review_work_report", "start_work_order",
+      "submit_work_report", "wait_for_update",
     ]);
   });
 
@@ -54,10 +55,11 @@ describe("desk MCP server", () => {
       assert.equal(a!.openWorldHint, false, name);
     }
     const readOnly = Object.keys(hints).filter((n) => hints[n]!.readOnlyHint).sort();
-    assert.deepEqual(readOnly, ["get_work_order", "list_work_orders", "wait_for_update"]);
+    assert.deepEqual(readOnly, ["get_track_record", "get_work_order", "list_work_orders", "wait_for_update"]);
     const destructive = Object.keys(hints).filter((n) => hints[n]!.destructiveHint).sort();
     assert.deepEqual(destructive, ["cancel_work_order", "decline_work_order"]);
     assert.equal(hints.create_work_order!.idempotentHint, false);
+    assert.equal(hints.report_progress!.idempotentHint, false);
   });
 
   test("runs a full job between two sessions", async () => {
@@ -206,5 +208,35 @@ describe("handoff over MCP", () => {
     const { manager } = await pair();
     const r = await manager("create_work_order", { ...orderInput(), handoff: { notes: "x" } }).catch((e) => ({ ok: false, body: String(e) }));
     assert.equal(r.ok, false);
+  });
+});
+
+describe("progress, staged effects and track records over MCP", () => {
+  test("a worker posts progress, the manager approves some effects and reads the worker's record", async () => {
+    const { manager, worker } = await pair();
+    const id = (await manager("create_work_order", { ...orderInput({ deadline: FAR, tools: ["filings/*", "gmail/*"], staged: ["gmail/send"] }) })).body.id;
+    await worker("accept_work_order", { id });
+    await worker("start_work_order", { id });
+
+    const progress = await worker("report_progress", { id, note: "Found the risk section", percent: 30 });
+    assert.ok(progress.ok, JSON.stringify(progress.body));
+    assert.equal(progress.body.state, "working");
+    assert.equal((await manager("report_progress", { id, note: "Hi" })).body.code, "FORBIDDEN");
+    const events = (await manager("get_work_order", { id })).body.events;
+    assert.deepEqual([events.at(-1).action, events.at(-1).percent], ["progress", 30]);
+
+    const effects = [
+      { ref: "gmail/send#4", tool: "gmail/send", arguments: { to: "cfo@example.com" } },
+      { ref: "gmail/send#5", tool: "gmail/send", arguments: { to: "board@example.com" }, reversible: false },
+    ];
+    const submitted = await worker("submit_work_report", { id, ...reportInput({ tools_used: ["gmail/send"], effects }) });
+    assert.ok(submitted.ok, JSON.stringify(submitted.body));
+    const approved = await manager("review_work_report", { id, decision: "approve", effects: ["gmail/send#4"] });
+    assert.ok(approved.ok, JSON.stringify(approved.body));
+    assert.deepEqual(approved.body.events.at(-1).effects, ["gmail/send#4"]);
+
+    const record = (await manager("get_track_record", { agent: WORKER })).body;
+    assert.deepEqual([record.orders, record.approved, record.approved_first_time, record.reports.done], [1, 1, 1, 1]);
+    assert.equal((await manager("get_track_record", { agent: WORKER, since: "soon" })).body.code, "BAD_REQUEST");
   });
 });

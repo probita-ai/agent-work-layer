@@ -1,12 +1,12 @@
-/** Document types for AWL v0.3. Field meanings are defined in SPEC.md §4 and §5. */
+/** Document types for AWL v0.4. Field meanings are defined in SPEC.md §4 and §5. */
 
 /** The spec version this package writes. */
-export const ORDER_SPEC = "awl/work-order@0.3";
-export const REPORT_SPEC = "awl/work-report@0.2";
+export const ORDER_SPEC = "awl/work-order@0.4";
+export const REPORT_SPEC = "awl/work-report@0.3";
 
 /** Every spec version this package reads (SPEC.md §11). */
-export const ORDER_SPECS = ["awl/work-order@0.1", "awl/work-order@0.2", ORDER_SPEC] as const;
-export const REPORT_SPECS = ["awl/work-report@0.1", REPORT_SPEC] as const;
+export const ORDER_SPECS = ["awl/work-order@0.1", "awl/work-order@0.2", "awl/work-order@0.3", ORDER_SPEC] as const;
+export const REPORT_SPECS = ["awl/work-report@0.1", "awl/work-report@0.2", REPORT_SPEC] as const;
 
 /** An Agent Card URL, an agent name, or `human:<id>`. */
 export type AgentRef = string;
@@ -47,6 +47,8 @@ export interface WorkOrder {
   deadline: string;
   /** Tool patterns: `server/tool`, `server/*` or `*`. */
   tools: string[];
+  /** Tools whose calls are held back until the report is approved (§4.6). Covered by `tools`. */
+  staged?: string[];
   escalate_to?: AgentRef;
   inputs?: Record<string, unknown>;
   context?: ContextRef[];
@@ -75,6 +77,17 @@ export interface Artifact {
   note?: string;
 }
 
+/** A staged call that runs only if the report is approved (§4.6). */
+export interface Effect {
+  /** The call's name, `server/tool#n`, as the gateway gave it. */
+  ref: string;
+  tool: string;
+  /** May contain references to earlier effects' results, `{ "$ref": "server/tool#n", "pointer": "/..." }` (§4.6). */
+  arguments: Record<string, unknown>;
+  /** The worker's claim that the effect can be undone. Not checked. */
+  reversible?: boolean;
+}
+
 export interface WorkResult {
   summary: string;
   output?: unknown;
@@ -92,6 +105,8 @@ export interface WorkReport {
   finished_at: string;
   /** Exact tool names, `server/tool`. */
   tools_used: string[];
+  /** Staged calls to run on approval, in order (§4.6). */
+  effects?: Effect[];
   started_at?: string;
   attempt?: number;
   questions?: string[];
@@ -135,10 +150,15 @@ export interface WorkEvent {
   seq: number;
   at: string;
   actor: AgentRef;
-  action: Action | "create";
+  /** A lifecycle action, `create`, or `progress`, which changes no state (§6.2). */
+  action: Action | "create" | "progress";
   from: State | null;
   to: State;
   note?: string;
+  /** `progress` only: how far along the work is, 0–100. */
+  percent?: number;
+  /** `approve` only: the refs of the effects approved to run, when not all of them (§4.6). */
+  effects?: string[];
 }
 
 /** A finding from a check in SPEC.md §7–§8. `limit` findings are recorded; `invalid` ones reject. */
@@ -158,6 +178,30 @@ export interface OrderRecord {
   findings: Finding[];
   /** The worker's current Delegation Pass (SPEC.md §10.2), while the order is `working` on a desk that issues passes. */
   pass?: string;
+}
+
+/** A worker's record on one desk (§6.3). */
+export interface TrackRecord {
+  agent: AgentRef;
+  /** Orders addressed to the agent, created at or after `since` when given. */
+  orders: number;
+  /** Orders not yet in a terminal state. */
+  active: number;
+  approved: number;
+  declined: number;
+  expired: number;
+  cancelled: number;
+  /** Approved orders that were never sent back for rework. */
+  approved_first_time: number;
+  /** Rework requests across the orders. */
+  reworks: number;
+  /** Reports submitted, by status. */
+  reports: Record<ReportStatus, number>;
+  /** Per unit, the latest report's cost added up over the orders that have a report. */
+  spent: Amounts;
+  /** Per unit, the budgets of those same orders added up. */
+  budget: Amounts;
+  since?: string;
 }
 
 export interface OrderSummary {

@@ -53,6 +53,6 @@ describe("spec versions (SPEC.md §11)", () => {
 
   test("unknown versions are rejected", () => {
     assert.deepEqual(rules(validateOrder({ ...order(), spec: "awl/work-order@1.0" })), ["O1"]);
-    assert.deepEqual(rules(validateReport({ ...report(), spec: "awl/work-report@0.3" }, order())), ["R1"]);
+    assert.deepEqual(rules(validateReport({ ...report(), spec: "awl/work-report@0.4" }, order())), ["R1"]);
   });
 });

@@ -6,7 +6,7 @@ Both implementations in this repo run every vector: [packages/core/test/conforma
 
 ## Files
 
-`vectors/<rule>.json` holds the vectors for one rule, from `O1.json` to `C4.json`. Each rule has at least one vector that passes and one that fails.
+`vectors/<rule>.json` holds the vectors for one rule, from `O1.json` to `C5.json`. Each rule has at least one vector that passes and one that fails.
 
 ```json
 {
@@ -39,10 +39,10 @@ Both implementations in this repo run every vector: [packages/core/test/conforma
 
 | `check` | Run | Rules |
 |---|---|---|
-| `order` | the order checks on `order` | O1–O4 |
-| `report` | the report checks on `report` against `order` | R1–R12 |
+| `order` | the order checks on `order` | O1–O5 |
+| `report` | the report checks on `report` against `order` | R1–R12, R14–R16 |
 | `own-cost` | the own-cost check on `report` against `order` and its `sub_orders` | R13 |
-| `child` | the sub-order checks on `order` against `parent` | C1–C3 |
+| `child` | the sub-order checks on `order` against `parent` | C1–C3, C5 |
 | `siblings` | the sibling budget check on `order` against `parent` and `siblings`, the parent's existing sub-orders as `{state, order}` | C4 |
 
 Every check runs, not only the file's rule. A vector changes one thing from a valid document, so the only findings expected are for the file's rule. The orders in `report`, `own-cost`, `child` and `siblings` vectors are valid; report checks assume a valid order.

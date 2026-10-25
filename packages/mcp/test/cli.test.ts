@@ -98,4 +98,39 @@ describe("awl-desk gateway", () => {
     const log = readFileSync(join(store, "calls", `${id}.jsonl`), "utf8").trim().split("\n");
     assert.equal(log.length, 3);
   });
+
+  test("--commit runs an approved report's staged effects", async () => {
+    const store = tempDir();
+    const desk = new WorkDesk({ store: new FileStore(store) });
+    const id = (await desk.create(orderInput({ tools: ["gmail/*"], staged: ["gmail/send"] }), MANAGER)).order.id;
+    await desk.accept(id, WORKER);
+
+    const config = join(store, "upstream.json");
+    writeFileSync(config, JSON.stringify({ mcpServers: { gmail: { command: process.execPath, args: [upstream, "gmail"] } } }));
+    const gateway = [cli, "gateway", "--order", id, "--config", config, "--store", store];
+
+    const client = new Client({ name: WORKER, version: "0" });
+    await client.connect(new StdioClientTransport({ command: process.execPath, args: gateway, stderr: "ignore" }));
+    try {
+      const r = (await client.callTool({ name: "gmail__send", arguments: { q: "hi" } })) as { content: { text: string }[] };
+      assert.equal(r.content[0].text, "pending:gmail/send#1");
+    } finally {
+      await client.close();
+    }
+
+    const early = spawnSync(process.execPath, [...gateway, "--commit"], { encoding: "utf8" });
+    assert.equal(early.status, 1);
+    assert.match(early.stderr, /only once its report is approved/);
+
+    const effects = [{ ref: "gmail/send#1", tool: "gmail/send", arguments: { q: "hi" } }];
+    await desk.submitReport(id, reportInput({ tools_used: ["gmail/send"], cost: { usd: 0.1, tool_calls: 1 }, effects }), WORKER);
+    await desk.review(id, MANAGER, "approve");
+    const done = spawnSync(process.execPath, [...gateway, "--commit"], { encoding: "utf8" });
+    assert.equal(done.status, 0, done.stderr);
+    const [committed] = JSON.parse(done.stdout);
+    assert.deepEqual([committed.ref, committed.outcome, committed.result.content[0].text], ["gmail/send#1", "ok", "gmail/send(hi)"]);
+
+    const r = spawnSync(process.execPath, [...gateway, "--commit", "--pass-keys", config, "--actor", WORKER], { encoding: "utf8" });
+    assert.equal(r.status, 2);
+  });
 });

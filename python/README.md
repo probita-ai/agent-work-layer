@@ -44,14 +44,15 @@ if has_invalid(findings):
 
 | Function | Rules |
 |---|---|
-| `validate_order(order)` | O1–O4 |
-| `validate_report(report, order)` | R1–R12 |
-| `validate_child_order(child, parent)` | C1–C3: a sub-order may only narrow its parent's budget, tools and deadline |
+| `validate_order(order)` | O1–O5 |
+| `validate_report(report, order)` | R1–R12, R14–R16 |
+| `validate_child_order(child, parent)` | C1–C3 and C5: a sub-order may only narrow its parent's budget, tools and deadline, and may not allow a tool its parent stages |
 | `validate_own_cost(report, order, sub_orders)` | R13: an order's own cost, plus what its sub-orders hold, stays within its budget |
 | `held_by_sub_orders(sub_orders)` | The budget an order's sub-orders hold |
 | `validate_child_budgets(child, parent, siblings)` | C4: a parent's sub-orders together stay within its budget. `siblings` are `{"order": ..., "state": ...}` |
 | `is_work_order(value)`, `is_work_report(value)` | Structure only (O1, R1) |
 | `tool_allowed(tool, patterns)`, `pattern_covered(child, parents)` | Tool pattern matching (`server/tool`, `server/*`, `*`) |
+| `effect_references(arguments)` | References to earlier effects' results in an effect's arguments, each `{"ref", "pointer", "path"}` |
 
 The JSON Schemas are available as `work_order_schema` and `work_report_schema`.
 

@@ -123,6 +123,34 @@ await desk.list({ continues: order.id });   // the orders that pick up from this
 
 `context` lists what to read; `handoff` says what was decided and already tried; `continues` links the new order to the one it replaces, so the chain of orders is the job's full history. Unlike `parent_id`, it doesn't narrow anything: the new order can have a different worker, budget and tools. See [SPEC.md §4.4](SPEC.md#44-handoff) and [§4.5](SPEC.md#45-continuation).
 
+### Hold writes until the report is approved
+
+Rejecting a report doesn't unsend an email. For tools whose effects you want to review first, list them in `staged`:
+
+```ts
+await desk.create({ ...job, tools: ["filings/*", "gmail/*"], staged: ["gmail/send"] }, "agent:manager");
+```
+
+The worker's [MCP gateway](packages/mcp/README.md#staged-tools-run-writes-only-after-approval) then holds back calls to `gmail/send`: it counts and logs each one and returns a placeholder (`pending:gmail/send#4`). The worker lists them in its report's `effects`, which the manager reviews with the rest of the report. Approving lets the gateway run them; rework drops them, and since they never ran, there is nothing to undo. Reads still run normally. A sub-order can't allow a tool its parent stages (C5).
+
+A staged call can use an earlier one's result: pass `{ "$ref": "github/create_issue#3", "pointer": "/structuredContent/number" }` as an argument, and the gateway fills it in when it runs the effects. The manager can also approve only some effects:
+
+```ts
+await desk.review(order.id, "agent:manager", "approve", "Send the CFO copy only", { effects: ["gmail/send#4"] });
+```
+
+See [SPEC.md §4.6](SPEC.md#46-staged-tools).
+
+### Follow progress and track records
+
+```ts
+await desk.progress(order.id, "agent:researcher", "Risk section read; checking the debt note", 60);
+await desk.trackRecord("agent:researcher");
+// { orders: 12, approved: 9, approved_first_time: 7, reworks: 3, expired: 1, ..., spent: { usd: 8.4 }, budget: { usd: 24 } }
+```
+
+Progress notes are `progress` events: they change no state, but `waitForChange` and `wait_for_update` wake on them. A track record counts what happened to the orders a desk holds for one worker. See [SPEC.md §6.2](SPEC.md#62-progress) and [§6.3](SPEC.md#63-track-record).
+
 ## Validate documents
 
 ```ts
@@ -206,7 +234,7 @@ Any active state ──cancel──▶ cancelled   ·   deadline or budget excee
 
 | Action | Who |
 |---|---|
-| accept, decline, start, submit report | the worker (`order.to`) |
+| accept, decline, start, submit report, post progress | the worker (`order.to`) |
 | approve, rework, cancel | the manager (`order.from`) |
 | answer a blocked worker | the manager or `order.escalate_to` |
 | expire | the desk |
@@ -215,12 +243,13 @@ Any active state ──cancel──▶ cancelled   ·   deadline or budget excee
 
 | Export | Purpose |
 |---|---|
-| `WorkDesk` | Runs the lifecycle: `create`, `accept`, `decline`, `start`, `submitReport`, `answer`, `review`, `cancel`, `get`, `list`, `subOrders`, `held`, `waitForChange`, and `issuePass` when it issues passes |
+| `WorkDesk` | Runs the lifecycle: `create`, `accept`, `decline`, `start`, `progress`, `submitReport`, `answer`, `review`, `cancel`, `get`, `list`, `subOrders`, `held`, `trackRecord`, `waitForChange`, and `issuePass` when it issues passes |
 | `MemoryStore`, `FileStore`, `SqliteStore`, `DeskStore` | Storage. Implement `DeskStore` (4 methods) to use a database |
 | `validateOrder`, `validateReport`, `validateChildOrder`, `validateChildBudgets`, `validateOwnCost`, `hasInvalid` | Spec checks, returning `Finding[]` |
 | `heldBySubOrders` | The budget an order's sub-orders hold, which it may not spend itself |
 | `isWorkOrder`, `isWorkReport` | Type guards |
 | `toolAllowed`, `patternCovered` | Tool pattern matching |
+| `effectReferences` | The references to earlier effects' results in an effect's arguments |
 | `nextState`, `allowedActions`, `STATES`, `ROLE_FOR`, `isTerminal` | The state machine |
 | `AwlError`, `isAwlError` | Typed errors with `code` and `findings` |
 | `signPass`, `verifyPass`, `decodePass`, `PassError` | [Delegation Passes](#delegation-pass): sign, verify (including narrowing against a parent), read |
@@ -235,7 +264,7 @@ Any active state ──cancel──▶ cancelled   ·   deadline or budget excee
 
 `NOT_FOUND`, `ALREADY_EXISTS`, `FORBIDDEN`, `INVALID_TRANSITION`, `VALIDATION_FAILED` (with `findings`), `CONFLICT` (a concurrent writer got there first; re-read and retry), `BAD_REQUEST`.
 
-`PassError` codes: `MALFORMED`, `UNSUPPORTED`, `BAD_SIGNATURE`, `EXPIRED`, `NOT_YET_VALID`, `WRONG_ISSUER`, `WRONG_WORKER`, `WRONG_ORDER`, `WRONG_PARENT`, `WIDER_THAN_PARENT` (with `findings` from C1–C3).
+`PassError` codes: `MALFORMED`, `UNSUPPORTED`, `BAD_SIGNATURE`, `EXPIRED`, `NOT_YET_VALID`, `WRONG_ISSUER`, `WRONG_WORKER`, `WRONG_ORDER`, `WRONG_PARENT`, `WIDER_THAN_PARENT` (with `findings` from C1–C3 and C5).
 
 ### Custom storage
 
@@ -272,7 +301,7 @@ With stdio, each agent runs its own desk and declares its own `actor`, so a work
 
 ## Delegation Pass
 
-When a worker starts, the desk signs a short-lived pass (a JWS) carrying the order's tools, budget and deadline. The worker presents it with each tool call, and a gateway or another team's system verifies it on its own, without calling the desk. A sub-order gets a narrower pass that names its parent, so the delegation rules (C1–C3) can be checked offline ([#17](https://github.com/probita-ai/agent-work-layer/issues/17), [SPEC.md §10.2](SPEC.md#102-delegation-pass)).
+When a worker starts, the desk signs a short-lived pass (a JWS) carrying the order's tools, budget and deadline. The worker presents it with each tool call, and a gateway or another team's system verifies it on its own, without calling the desk. A sub-order gets a narrower pass that names its parent, so the delegation rules (C1–C3, C5) can be checked offline ([#17](https://github.com/probita-ai/agent-work-layer/issues/17), [SPEC.md §10.2](SPEC.md#102-delegation-pass)).
 
 <p align="center"><img src="docs/delegation-pass.svg" alt="The desk signs a pass when the worker starts; the gateway verifies it on each tool call, allowing filings/search and refusing web/browse; a sub-order gets a narrower pass naming its parent. Below, the claims in a pass: iss, sub, awl_order, awl_tools, awl_budget, awl_parent, awl_deadline, awl_attempt, iat, exp, jti, and the typ awl-pass+jwt" width="760"></p>
 
@@ -291,7 +320,7 @@ const { pass } = await desk.start(id, "agent:worker");   // renew with desk.issu
 // Anywhere else, with only the desk's public key:
 const verified = await verifyPass(pass, publicJwk, { issuer: "https://desk.example.com", worker: "agent:worker", order: id });
 verified.allows("filings/search");   // true
-const child = await verifyPass(childPass, publicJwk, { parent: verified });   // throws WIDER_THAN_PARENT if it breaks C1–C3
+const child = await verifyPass(childPass, publicJwk, { parent: verified });   // throws WIDER_THAN_PARENT if it breaks C1–C3 or C5
 ```
 
 Keys are P-256 or Ed25519 JWKs (or WebCrypto keys) that you supply; the SDK does no key management. `signPass` and `verifyPass` use WebCrypto only, so they are also in `agent-work-layer/validate` for browsers, Deno and Bun. To make a key pair in Node:

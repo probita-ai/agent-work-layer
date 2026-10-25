@@ -4,8 +4,9 @@ import { ORDER_SPEC, validateOrder } from "../src/index.ts";
 import { HELPER, MANAGER, STRANGER, WORKER, newDesk, order, orderInput, rejectsWith, reportInput, workingOrder } from "./helpers.ts";
 
 describe("continues", () => {
-  test("is part of the v0.3 order format, and older versions still validate", () => {
-    assert.equal(ORDER_SPEC, "awl/work-order@0.3");
+  test("is part of the order format since v0.3, and older versions still validate", () => {
+    assert.equal(ORDER_SPEC, "awl/work-order@0.4");
+    assert.deepEqual(validateOrder(order({ spec: "awl/work-order@0.3", continues: "wo_0" })), []);
     assert.deepEqual(validateOrder(order({ continues: "wo_0" })), []);
     assert.deepEqual(validateOrder(order({ spec: "awl/work-order@0.2" })), []);
     assert.equal(validateOrder(order({ continues: "" }))[0].rule, "O1");
@@ -23,7 +24,7 @@ describe("continues", () => {
 
     const second = (await desk.create(orderInput({ to: HELPER, continues: first, handoff }), MANAGER)).order;
     assert.equal(second.continues, first);
-    assert.equal(second.spec, "awl/work-order@0.3");
+    assert.equal(second.spec, ORDER_SPEC);
     await desk.decline(second.id, HELPER, "busy");
 
     // A different worker, budget and tools: no narrowing applies.

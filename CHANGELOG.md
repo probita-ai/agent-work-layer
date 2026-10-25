@@ -1,5 +1,39 @@
 # Changelog
 
+## 0.7.0 — 2026-10-24
+
+Both packages: `agent-work-layer` 0.7.0 and `agent-work-layer-mcp` 0.7.0. Spec v0.4: Work Orders are written as `awl/work-order@0.4` and Work Reports as `awl/work-report@0.3`. Every earlier version is still read.
+
+### Added
+
+- Staged tools (#30), SPEC.md §4.6: tools whose calls run only once the report is approved, so a manager reviews writes before they reach the world instead of after.
+  - Work Order: optional `staged`, tool patterns covered by `tools`. Work Report: optional `effects`, each `{ref, tool, arguments, reversible?}`, in the order they should run.
+  - Rules O5 (staged patterns are covered by `tools`), R14 (every effect's tool is staged), R15 (effect refs are `<tool>#<n>` and unique) and C5 (a sub-order may not allow a tool its parent stages, since its effects would run on its own approval). The TypeScript and Python validators both apply them, with conformance vectors in `conformance/vectors/O5.json`, `R14.json`, `R15.json` and `C5.json`.
+  - Delegation Pass: a new `awl_staged` claim when the order stages tools; `verifyPass` checks C5 between a pass and its parent's.
+  - `agent-work-layer-mcp` gateway: a call to a staged tool is counted and logged with its arguments but not forwarded, and the worker gets `pending:<server>/<tool>#<n>`. `awl_usage` (and `usage()`) list the waiting calls as `effects`. `gateway.commit()` and `awl-desk gateway --commit` run the approved report's effects in order. They run nothing unless the order is `approved` and every effect matches a staged call in the log (same ref, tool and arguments, made since the last rework), and they never run an effect twice. A rework drops earlier staged calls; a blocked report does not.
+  - `create_work_order` takes `staged` and `submit_work_report` takes `effects`. Python: `Effect` model, `WorkOrder.staged`, `WorkReport.effects`.
+- Effects that use an earlier effect's result, SPEC.md §4.6: a staged call's arguments may contain `{"$ref": "<earlier ref>", "pointer": "<JSON Pointer>"}`, which the gateway fills in from that effect's real result when it runs them. An effect whose reference can't be filled in (the earlier effect failed or was skipped, or has nothing at the pointer) is skipped and logged with the reason. Commit log lines now keep each result, so a restarted gateway can still fill in references.
+  - Rule R16: a reference names an effect listed earlier in the report, with a valid JSON Pointer. Both validators, with `conformance/vectors/R16.json`.
+  - `effectReferences(arguments)` in `agent-work-layer`; `effect_references` in the Python package.
+- Approving only some effects, SPEC.md §4.6: `desk.review(id, manager, "approve", reason, { effects: [...] })` and `review_work_report`'s `effects` record the chosen refs on the `approve` event, and the gateway runs only those. The desk refuses refs the report doesn't list, and a choice that keeps an effect but drops one it uses. `effects: []` approves the work and runs nothing.
+- Progress events, SPEC.md §6.2: `desk.progress(id, worker, note, percent?)` and the `report_progress` MCP tool record a `progress` event while an order is `working`. They change no state but advance `seq`, so `wait_for_update` wakes. `WorkEvent` gains optional `percent` and `effects`.
+- Commits run each effect at most once, even across crashes and processes: the gateway logs a `running` line before each call and settles an effect left `running` as an error instead of retrying it, and a `<log>.commit-lock` file stops two commits for one order from running at once.
+- Track records, SPEC.md §6.3: `desk.trackRecord(agent, { since? })` and the `get_track_record` MCP tool count what happened to the orders addressed to a worker: by final state, first-time approvals, reworks, reports by status, and spending against budget. New `TrackRecord` type.
+
+### Changed
+
+- `agent-work-layer-mcp` now depends on `agent-work-layer` ^0.7.0: the gateway uses `effectReferences`, and the desk tools use `desk.progress()`, `desk.trackRecord()` and `review()`'s `effects`, all new in 0.7.0.
+- Upgrade `agent-work-layer-mcp` gateways along with the desk before issuing orders with `staged`. A gateway from 0.6.x or earlier doesn't know `staged` (or a pass's `awl_staged`) and forwards those calls straight away. Desks and validators from 0.6.x reject `@0.4` orders, so they fail closed.
+- TypeScript: some types got wider. `WorkEvent.action` adds `"progress"`, `CallRecord.outcome` adds `"staged"`, `"skipped"` and `"running"`, `Usage` adds `effects`, and `Gateway` adds `commit()`. Exhaustive `switch` statements over these may need a new case.
+- Staged calls count against `budget.tool_calls` when they are made, even if a rework drops them later.
+
+## python 0.4.0 — 2026-10-24
+
+### Added
+
+- Spec v0.4: `WorkOrder.staged`, `WorkReport.effects` and the `Effect` model; orders `@0.4` and reports `@0.3` are written, and every earlier version is read.
+- Rules O5, R14, R15, R16 and C5 in `validate_order`, `validate_report` and `validate_child_order`, and `effect_references(arguments)`. Same findings, paths and messages as `agent-work-layer` 0.7.0; the tests run the new conformance vectors.
+
 ## 0.6.0 — 2026-10-21
 
 Both packages: `agent-work-layer` 0.6.0 and `agent-work-layer-mcp` 0.6.0. Spec v0.3, with two new checks (C4, R13); document formats are unchanged.

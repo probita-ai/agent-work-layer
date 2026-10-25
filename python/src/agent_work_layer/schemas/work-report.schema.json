@@ -1,11 +1,11 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://awl.dev/schemas/work-report-0.2.json",
-  "title": "AWL Work Report v0.2",
+  "$id": "https://awl.dev/schemas/work-report-0.3.json",
+  "title": "AWL Work Report v0.3",
   "type": "object",
   "required": ["spec", "order_id", "from", "status", "result", "evidence", "cost", "finished_at", "tools_used"],
   "properties": {
-    "spec": { "enum": ["awl/work-report@0.1", "awl/work-report@0.2"] },
+    "spec": { "enum": ["awl/work-report@0.1", "awl/work-report@0.2", "awl/work-report@0.3"] },
     "order_id": { "type": "string", "minLength": 1 },
     "from": { "type": "string", "minLength": 1, "maxLength": 512 },
     "status": { "enum": ["done", "blocked", "failed"] },
@@ -58,6 +58,20 @@
     "started_at": { "type": "string", "format": "date-time" },
     "finished_at": { "type": "string", "format": "date-time" },
     "tools_used": { "type": "array", "items": { "type": "string", "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$" } },
+    "effects": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["ref", "tool", "arguments"],
+        "properties": {
+          "ref": { "type": "string", "minLength": 1 },
+          "tool": { "type": "string", "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$" },
+          "arguments": { "type": "object" },
+          "reversible": { "type": "boolean" }
+        },
+        "additionalProperties": false
+      }
+    },
     "attempt": { "type": "integer", "minimum": 1 },
     "questions": { "type": "array", "items": { "type": "string", "minLength": 1 } },
     "error": { "type": "string", "minLength": 1 },

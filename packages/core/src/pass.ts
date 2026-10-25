@@ -21,6 +21,8 @@ export interface PassClaims {
   awl_parent?: string;
   /** The order's tool patterns. */
   awl_tools: string[];
+  /** The order's staged tool patterns, when it stages any (§4.6). */
+  awl_staged?: string[];
   /** The order's whole budget, not what is left of it. */
   awl_budget: Amounts;
   /** The order's deadline (RFC 3339). `exp` is never later. */
@@ -70,7 +72,7 @@ export type PassErrorCode =
   | "WRONG_PARENT"
   | "WIDER_THAN_PARENT";
 
-/** Why a pass could not be signed or was rejected. `findings` is set for WIDER_THAN_PARENT (rules C1–C3). */
+/** Why a pass could not be signed or was rejected. `findings` is set for WIDER_THAN_PARENT (rules C1–C3, C5). */
 export class PassError extends Error {
   readonly code: PassErrorCode;
   readonly findings: Finding[];
@@ -109,7 +111,7 @@ export interface VerifyPassOptions {
   order?: string;
   /**
    * The parent order's verified pass. The pass must then name it in `awl_parent` and be no
-   * wider than it (C1–C3). Verify a chain from the top down, passing each result to the next.
+   * wider than it (C1–C3, C5). Verify a chain from the top down, passing each result to the next.
    */
   parent?: VerifiedPass;
   /** Seconds of clock skew to allow on `exp` (default 0) and on `iat` (at least 60, since issuer and verifier clocks differ). */
@@ -199,6 +201,7 @@ export async function signPass(order: WorkOrder, key: PassKey, options: SignPass
     awl_order: order.id,
     ...(order.parent_id ? { awl_parent: order.parent_id } : {}),
     awl_tools: [...order.tools],
+    ...(order.staged?.length ? { awl_staged: [...order.staged] } : {}),
     awl_budget: { ...order.budget },
     awl_deadline: order.deadline,
     ...(attempt !== undefined ? { awl_attempt: attempt } : {}),
@@ -232,6 +235,7 @@ function checkShape(c: Record<string, unknown>): asserts c is PassClaims & Recor
     isString(c.iss) && isString(c.sub) && isString(c.awl_order) && isString(c.jti) &&
     (c.awl_parent === undefined || isString(c.awl_parent)) &&
     Array.isArray(c.awl_tools) && c.awl_tools.every(isString) &&
+    (c.awl_staged === undefined || (Array.isArray(c.awl_staged) && c.awl_staged.every(isString))) &&
     !!budget && typeof budget === "object" && !Array.isArray(budget) &&
     Object.entries(budget).every(([unit, v]) => (UNITS as readonly string[]).includes(unit) && typeof v === "number" && v >= 0) &&
     isString(c.awl_deadline) && !Number.isNaN(Date.parse(c.awl_deadline)) &&
@@ -297,7 +301,7 @@ export async function verifyPass(token: string, keys: PassKeys, options: VerifyP
     }
     const findings = validateChildOrder(
       { budget: c.awl_budget, tools: c.awl_tools, deadline: c.awl_deadline },
-      { budget: parent.claims.awl_budget, tools: parent.claims.awl_tools, deadline: parent.claims.awl_deadline },
+      { budget: parent.claims.awl_budget, tools: parent.claims.awl_tools, deadline: parent.claims.awl_deadline, staged: parent.claims.awl_staged },
     );
     if (findings.length) throw new PassError("WIDER_THAN_PARENT", `pass for "${c.awl_order}" is wider than its parent's`, findings);
   }

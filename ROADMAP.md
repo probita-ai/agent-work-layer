@@ -1,6 +1,6 @@
 # Roadmap
 
-AWL is at spec v0.3 (packages 0.6). The goal is a small format that many agent frameworks can share. Items marked **help wanted** are good places to start.
+AWL is at spec v0.4 (packages 0.7). The goal is a small format that many agent frameworks can share. Items marked **help wanted** are good places to start.
 
 ## Done
 
@@ -8,11 +8,13 @@ AWL is at spec v0.3 (packages 0.6). The goal is a small format that many agent f
 - **Authenticated actor** — `awl-desk serve` runs one desk over HTTP that takes each request's actor from its credential, through a pluggable `authenticate` hook (SPEC.md §10.1).
 - **Delegation Pass** — the desk signs an order's tools, budget and deadline into a short-lived JWT that gateways and other systems verify without the desk, with narrowing checked across sub-orders (SPEC.md §10.2).
 - **Continuation** — `continues` links a reissued order to the finished one it picks up from, so a job's chain of orders is its full history (SPEC.md §4.5).
+- **Staged tools** — the gateway holds an order's `staged` tool calls until the manager approves the report, then runs exactly the effects the report listed, or only those the manager chose, filling in references to earlier effects' results (SPEC.md §4.6).
+- **Progress events** — a worker posts notes while it works; managers following the order see them (SPEC.md §6.2).
+- **Track records** — a desk counts what happened to each worker's orders (SPEC.md §6.3).
 - **Conformance vectors** — JSON documents with the findings each check must report, at least one passing and one failing per rule, in [`conformance/`](conformance/). The TypeScript and Python validators both pass them.
 
 ## Next
 
-- **Progress events** — optional streaming updates while an order is `working`.
 - **A2A binding** — carry orders and reports as A2A message parts, with an example. *help wanted*
 
 ## Implementations
@@ -23,11 +25,10 @@ AWL is at spec v0.3 (packages 0.6). The goal is a small format that many agent f
 ## Integrations
 
 - Adapters for popular agent frameworks (manager hires worker through AWL). *help wanted*
-- Dashboard: orders, costs, approvals and per-agent track records.
+- Dashboard: orders, costs, approvals, progress and per-agent track records.
 
 ## Later
 
-- Track records: aggregate approved reports into a per-agent history.
 - Spec v1.0 once at least two independent implementations pass the conformance vectors.
 
 Have an idea that isn't here? Open an issue.

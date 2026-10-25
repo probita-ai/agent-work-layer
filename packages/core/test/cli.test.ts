@@ -140,7 +140,7 @@ describe("awl CLI", () => {
   });
 
   test("schema prints both JSON Schemas", () => {
-    assert.equal(JSON.parse(awl("schema", "order").out).title, "AWL Work Order v0.3");
-    assert.equal(JSON.parse(awl("schema", "report").out).title, "AWL Work Report v0.2");
+    assert.equal(JSON.parse(awl("schema", "order").out).title, "AWL Work Order v0.4");
+    assert.equal(JSON.parse(awl("schema", "report").out).title, "AWL Work Report v0.3");
   });
 });

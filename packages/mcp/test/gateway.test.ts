@@ -1,11 +1,11 @@
 import { describe, test, after } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { appendFileSync, existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { AwlError, WorkDesk } from "agent-work-layer";
-import type { WorkOrderInput } from "agent-work-layer";
+import type { WorkOrderInput, WorkReportInput } from "agent-work-layer";
 import { createGateway, USAGE_TOOL } from "../src/index.ts";
 import type { GatewayOptions } from "../src/index.ts";
 import { MANAGER, STRANGER, WORKER, orderInput, reportInput, tempDir } from "./helpers.ts";
@@ -25,7 +25,7 @@ async function link(server: { connect: Client["connect"] }, name: string) {
 
 type Call = { ok: boolean; texts: string[]; body: any; meta?: Record<string, unknown> };
 
-/** A desk with one accepted order, a gateway for it in front of three upstream servers, and a worker client. */
+/** A desk with one accepted order, a gateway for it in front of four upstream servers, and a worker client. */
 async function setup(order: Partial<WorkOrderInput> = {}, extra: Partial<GatewayOptions> = {}) {
   const desk = (extra.desk as WorkDesk | undefined) ?? new WorkDesk();
   const id = (await desk.create(orderInput(order), MANAGER)).order.id;
@@ -33,7 +33,7 @@ async function setup(order: Partial<WorkOrderInput> = {}, extra: Partial<Gateway
 
   const arrived: string[] = [];
   const upstreams: Record<string, Client> = {};
-  for (const name of ["filings", "calc", "shell"]) upstreams[name] = await link(upstreamServer(name, arrived), "gateway");
+  for (const name of ["filings", "calc", "shell", "gmail"]) upstreams[name] = await link(upstreamServer(name, arrived), "gateway");
 
   const gateway = await createGateway({ desk, orderId: id, upstreams, ...extra });
   const client = await link(gateway.server, WORKER);
@@ -239,3 +239,255 @@ describe("MCP gateway", () => {
     await assert.rejects(createGateway({ desk, orderId: "missing", upstreams: {} }), (e: AwlError) => e.code === "NOT_FOUND");
   });
 });
+
+describe("MCP gateway with staged tools", () => {
+  const STAGED = { tools: ["filings/*", "gmail/*"], staged: ["gmail/send"] };
+
+  /** Submits a done report listing the gateway's pending effects, as awl_usage gives them. */
+  async function report(s: Awaited<ReturnType<typeof setup>>, overrides: Partial<WorkReportInput> = {}) {
+    const usage = await s.gateway.usage();
+    return s.desk.submitReport(s.id, reportInput({ tools_used: usage.tools_used, cost: { usd: 0.1, ...usage.cost }, effects: usage.effects, ...overrides }), WORKER);
+  }
+
+  test("holds back a staged call, counts it and returns a placeholder", async () => {
+    const s = await setup(STAGED);
+    const tools = (await s.client.listTools()).tools;
+    assert.match(tools.find((t) => t.name === "gmail__send")!.description!, /Staged/);
+    assert.doesNotMatch(tools.find((t) => t.name === "gmail__draft")!.description!, /Staged/);
+
+    await s.call("filings__search", { q: "risk" });
+    const r = await s.call("gmail__send", { q: "hello" });
+    assert.ok(r.ok);
+    assert.equal(r.texts[0], "pending:gmail/send#2");
+    assert.match(r.texts.at(-1)!, /evidence ref: gmail\/send#2; staged/);
+    assert.equal(r.meta?.["awl/ref"], "gmail/send#2");
+    assert.equal(r.meta?.["awl/staged"], true);
+    assert.ok((await s.call("gmail__draft", { q: "draft" })).ok);
+    assert.deepEqual(s.arrived, ["filings/search", "gmail/draft"]);
+
+    const usage = (await s.call(USAGE_TOOL)).body;
+    assert.equal(usage.cost.tool_calls, 3);
+    assert.deepEqual(usage.tools_used, ["filings/search", "gmail/send", "gmail/draft"]);
+    assert.deepEqual(usage.effects, [{ ref: "gmail/send#2", tool: "gmail/send", arguments: { q: "hello" } }]);
+    assert.equal(usage.calls[1].outcome, "staged");
+  });
+
+  test("runs the effects once the report is approved, and only once", async () => {
+    const s = await setup(STAGED);
+    await s.call("gmail__send", { q: "first" });
+    await s.call("gmail__send", { q: "second" });
+    const { findings } = await report(s);
+    assert.deepEqual(findings, []);
+
+    await rejectsCode(s.gateway.commit(), "INVALID_TRANSITION");
+    assert.deepEqual(s.arrived, []);
+
+    await s.desk.review(s.id, MANAGER, "approve");
+    const committed = await s.gateway.commit();
+    assert.deepEqual(committed.map((c) => [c.ref, c.outcome]), [["gmail/send#1", "ok"], ["gmail/send#2", "ok"]]);
+    assert.equal((committed[1].result!.content as { text: string }[])[0].text, "gmail/send(second)");
+    assert.deepEqual(s.arrived, ["gmail/send", "gmail/send"]);
+
+    const again = await Promise.all([s.gateway.commit(), s.gateway.commit()]);
+    assert.ok(again.flat().every((c) => c.earlier && !c.result));
+    assert.equal(s.arrived.length, 2);
+
+    const usage = await s.gateway.usage();
+    assert.deepEqual(usage.effects, []);
+    assert.equal(usage.cost.tool_calls, 2);
+    assert.deepEqual(usage.calls.map((c) => [c.ref, c.outcome, c.commit ?? false]), [
+      ["gmail/send#1", "staged", false], ["gmail/send#2", "staged", false],
+      ["gmail/send#1", "running", true], ["gmail/send#1", "ok", true], ["gmail/send#2", "running", true], ["gmail/send#2", "ok", true],
+    ]);
+  });
+
+  test("runs nothing when an effect in the report does not match the log", async () => {
+    const s = await setup(STAGED);
+    await s.call("gmail__send", { q: "to the team" });
+    await s.call("gmail__send", { q: "to the board" });
+    const effects = (await s.gateway.usage()).effects;
+    await report(s, { effects: [effects[0], { ...effects[1], arguments: { q: "to everyone" } }] });
+    await s.desk.review(s.id, MANAGER, "approve");
+    await rejectsCode(s.gateway.commit(), "CONFLICT");
+
+    const forged = await setup(STAGED);
+    await report(forged, { effects: [{ ref: "gmail/send#1", tool: "gmail/send", arguments: {} }] });
+    await forged.desk.review(forged.id, MANAGER, "approve");
+    await rejectsCode(forged.gateway.commit(), "CONFLICT");
+    assert.deepEqual([...s.arrived, ...forged.arrived], []);
+  });
+
+  test("argument order does not matter", async () => {
+    const s = await setup({ ...STAGED, tools: ["*"], staged: ["*"] });
+    await s.call("gmail__send", { q: "hi", nested: { b: 1, a: [1, { y: 2, x: 1 }] } } as never);
+    await report(s, { effects: [{ ref: "gmail/send#1", tool: "gmail/send", arguments: { nested: { a: [1, { x: 1, y: 2 }], b: 1 }, q: "hi" } }] });
+    await s.desk.review(s.id, MANAGER, "approve");
+    assert.equal((await s.gateway.commit())[0].outcome, "ok");
+  });
+
+  test("a rework drops the effects staged before it; a blocked report does not", async () => {
+    const s = await setup(STAGED);
+    await s.call("gmail__send", { q: "draft one" });
+    const stale = (await s.gateway.usage()).effects;
+    await report(s);
+    await s.desk.review(s.id, MANAGER, "rework", "Wrong recipient");
+    assert.deepEqual((await s.gateway.usage()).effects, []);
+
+    await s.call("gmail__send", { q: "draft two" });
+    await s.desk.submitReport(s.id, reportInput({ status: "blocked", evidence: [], questions: ["CC legal?"] }), WORKER);
+    await s.desk.answer(s.id, MANAGER, "No");
+    await s.call("gmail__send", { q: "draft three" });
+    const live = (await s.gateway.usage()).effects;
+    assert.deepEqual(live.map((e) => e.arguments.q), ["draft two", "draft three"]);
+
+    await report(s, { effects: [...stale, ...live] });
+    await s.desk.review(s.id, MANAGER, "approve");
+    await rejectsCode(s.gateway.commit(), "CONFLICT");
+    assert.deepEqual(s.arrived, []);
+  });
+
+  test("effects left out of the report never run", async () => {
+    const s = await setup(STAGED);
+    await s.call("gmail__send", { q: "keep" });
+    await s.call("gmail__send", { q: "skip" });
+    await report(s, { effects: (await s.gateway.usage()).effects.slice(0, 1) });
+    await s.desk.review(s.id, MANAGER, "approve");
+    assert.deepEqual((await s.gateway.commit()).map((c) => c.ref), ["gmail/send#1"]);
+    assert.deepEqual(s.arrived, ["gmail/send"]);
+  });
+
+  test("a gateway restarted from the log can commit, and a failed effect is not retried", async () => {
+    const logFile = join(tempDir(), "calls", "order.jsonl");
+    const s = await setup({ ...STAGED, tools: ["*"], staged: ["filings/broken", "gmail/send"] }, { logFile });
+    await s.call("filings__broken");
+    await s.call("gmail__send", { q: "after" });
+    await report(s);
+    await s.desk.review(s.id, MANAGER, "approve");
+
+    const again = await createGateway({ desk: s.desk, orderId: s.id, upstreams: s.upstreams, logFile });
+    assert.deepEqual((await again.commit()).map((c) => [c.ref, c.outcome]), [["filings/broken#1", "error"], ["gmail/send#2", "ok"]]);
+    const third = await createGateway({ desk: s.desk, orderId: s.id, upstreams: s.upstreams, logFile });
+    assert.deepEqual((await third.commit()).map((c) => [c.outcome, c.earlier]), [["error", true], ["ok", true]]);
+    // The worker's gateway loaded the log before those commits; it reads the file again, so runs nothing twice.
+    assert.ok((await s.gateway.commit()).every((c) => c.earlier));
+    assert.deepEqual(s.arrived, ["filings/broken", "gmail/send"]);
+  });
+
+  test("fills references to earlier effects' results when it runs them", async () => {
+    const s = await setup({ ...STAGED, staged: ["gmail/*"] });
+    const draft = await s.call("gmail__draft", { q: "Q3 risks" });
+    assert.match(draft.texts.at(-1)!, /"\$ref": "gmail\/draft#1"/);
+    await s.call("gmail__send", { q: { $ref: "gmail/draft#1", pointer: "/content/0/text" } } as never);
+    await report(s);
+    await s.desk.review(s.id, MANAGER, "approve");
+
+    const committed = await s.gateway.commit();
+    assert.deepEqual(committed.map((c) => c.outcome), ["ok", "ok"]);
+    assert.equal((committed[1].result!.content as { text: string }[])[0].text, "gmail/send(gmail/draft(Q3 risks))");
+    const sent = (await s.gateway.usage()).calls.at(-1)!;
+    assert.deepEqual([sent.commit, sent.arguments], [true, { q: "gmail/draft(Q3 risks)" }]);
+  });
+
+  test("skips an effect whose reference cannot be filled in, and the effects that use it", async () => {
+    const logFile = join(tempDir(), "calls", "order.jsonl");
+    const s = await setup({ tools: ["*"], staged: ["filings/broken", "gmail/*"] }, { logFile });
+    await s.call("filings__broken");
+    await s.call("gmail__draft", { q: { $ref: "filings/broken#1", pointer: "/content/0/text" } } as never);
+    await s.call("gmail__send", { q: { $ref: "gmail/draft#2", pointer: "/content/0/text" } } as never);
+    await s.call("gmail__draft", { q: "fine" });
+    await s.call("gmail__send", { q: { $ref: "gmail/draft#4", pointer: "/structuredContent/id" } } as never);
+    await report(s);
+    await s.desk.review(s.id, MANAGER, "approve");
+
+    const committed = await s.gateway.commit();
+    assert.deepEqual(committed.map((c) => c.outcome), ["error", "skipped", "skipped", "ok", "skipped"]);
+    assert.match(committed[1].message!, /"filings\/broken#1" did not succeed/);
+    assert.match(committed[4].message!, /nothing at "\/structuredContent\/id"/);
+    assert.deepEqual(s.arrived, ["filings/broken", "gmail/draft"]);
+
+    // Skipped effects are not tried again, and a restarted gateway still has the results references need.
+    const again = await createGateway({ desk: s.desk, orderId: s.id, upstreams: s.upstreams, logFile });
+    assert.deepEqual((await again.commit()).map((c) => [c.outcome, c.earlier]), committed.map((c) => [c.outcome, true]));
+    assert.equal(s.arrived.length, 2);
+  });
+
+  test("runs only the effects the approval chose", async () => {
+    const s = await setup({ ...STAGED, staged: ["gmail/*"] });
+    await s.call("gmail__draft", { q: "a" });
+    await s.call("gmail__send", { q: "b" });
+    await s.call("gmail__send", { q: { $ref: "gmail/draft#1", pointer: "/content/0/text" } } as never);
+    await report(s);
+    await s.desk.review(s.id, MANAGER, "approve", undefined, { effects: ["gmail/send#3", "gmail/draft#1"] });
+    assert.deepEqual((await s.gateway.commit()).map((c) => [c.ref, c.outcome]), [["gmail/draft#1", "ok"], ["gmail/send#3", "ok"]]);
+    assert.deepEqual(s.arrived, ["gmail/draft", "gmail/send"]);
+
+    const none = await setup(STAGED);
+    await none.call("gmail__send", { q: "x" });
+    await report(none);
+    await none.desk.review(none.id, MANAGER, "approve", undefined, { effects: [] });
+    assert.deepEqual(await none.gateway.commit(), []);
+    assert.deepEqual(none.arrived, []);
+  });
+
+  test("a dropped effect need not match the log", async () => {
+    const s = await setup(STAGED);
+    await s.call("gmail__send", { q: "real" });
+    const [real] = (await s.gateway.usage()).effects;
+    await report(s, { effects: [real, { ref: "gmail/send#9", tool: "gmail/send", arguments: {} }] });
+    await s.desk.review(s.id, MANAGER, "approve", undefined, { effects: ["gmail/send#1"] });
+    assert.deepEqual((await s.gateway.commit()).map((c) => c.outcome), ["ok"]);
+  });
+
+  test("an effect a crashed commit started is settled as an error, never run again", async () => {
+    const logFile = join(tempDir(), "calls", "order.jsonl");
+    const s = await setup(STAGED, { logFile });
+    await s.call("gmail__send", { q: "first" });
+    await s.call("gmail__send", { q: "second" });
+    await report(s);
+    await s.desk.review(s.id, MANAGER, "approve");
+    // As if a commit died during the call to gmail/send#1: its "running" line was written, nothing after it.
+    appendFileSync(logFile, JSON.stringify({ ref: "gmail/send#1", tool: "gmail/send", order_id: s.id, at: "2026-01-01T10:00:00Z", outcome: "running", commit: true }) + "\n");
+
+    const committed = await s.gateway.commit();
+    assert.deepEqual(committed.map((c) => [c.ref, c.outcome]), [["gmail/send#1", "error"], ["gmail/send#2", "ok"]]);
+    assert.match(committed[0].message!, /may have run/);
+    assert.deepEqual(s.arrived, ["gmail/send"]);
+    assert.deepEqual((await s.gateway.commit()).map((c) => c.outcome), ["error", "ok"]);
+    assert.equal(s.arrived.length, 1);
+  });
+
+  test("a second process cannot commit while one is committing", async () => {
+    const logFile = join(tempDir(), "calls", "order.jsonl");
+    const s = await setup(STAGED, { logFile });
+    await s.call("gmail__send", { q: "once" });
+    await report(s);
+    await s.desk.review(s.id, MANAGER, "approve");
+    writeFileSync(`${logFile}.commit-lock`, "");
+    const other = await createGateway({ desk: s.desk, orderId: s.id, upstreams: s.upstreams, logFile });
+    await rejectsCode(other.commit(), "CONFLICT");
+    assert.deepEqual(s.arrived, []);
+
+    rmSync(`${logFile}.commit-lock`);
+    assert.deepEqual((await other.commit()).map((c) => c.outcome), ["ok"]);
+    assert.equal(existsSync(`${logFile}.commit-lock`), false);
+  });
+
+  test("an order without staged tools commits nothing, and a pass-mode gateway cannot commit", async () => {
+    const s = await setup();
+    await s.call("filings__search");
+    await report(s);
+    await s.desk.review(s.id, MANAGER, "approve");
+    assert.deepEqual(await s.gateway.commit(), []);
+
+    const passOnly = await createGateway({ orderId: s.id, upstreams: {}, actor: WORKER, passKeys: [] });
+    await rejectsCode(passOnly.commit(), "BAD_REQUEST");
+  });
+});
+
+async function rejectsCode(p: Promise<unknown>, code: string) {
+  await assert.rejects(p, (e: AwlError) => {
+    assert.ok(e instanceof AwlError, String(e));
+    assert.equal(e.code, code, e.message);
+    return true;
+  });
+}

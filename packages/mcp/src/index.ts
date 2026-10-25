@@ -6,7 +6,7 @@ import type { OrderRecord, State, WorkDesk, WorkOrderInput, WorkReportInput } fr
 import { VERSION } from "./version.ts";
 
 export { createGateway, USAGE_TOOL } from "./gateway.ts";
-export type { CallRecord, Gateway, GatewayOptions, RefusalCode, Usage } from "./gateway.ts";
+export type { CallRecord, Committed, Gateway, GatewayOptions, RefusalCode, Usage } from "./gateway.ts";
 export { AuthError, apiKeyAuth, bearerAuth, bearerToken, createDeskHttpHandler, resourceMetadataUrl } from "./http.ts";
 export type { Authenticate, BearerAuthOptions, DeskHttpOptions, ProtectedResourceMetadata, TokenClaims } from "./http.ts";
 
@@ -100,6 +100,7 @@ export function createDeskServer({ desk, actor: sessionActor, name = "awl-work-d
         budget: amounts.describe("Upper limits; set at least one unit"),
         deadline: z.string().describe("RFC 3339 timestamp"),
         tools: z.array(z.string()).describe('Allowed tools: "server/tool", "server/*" or "*"'),
+        staged: z.array(z.string()).optional().describe("Tools, among those allowed, whose calls the worker's gateway holds back until you approve the report"),
         escalate_to: z.string().optional(),
         inputs: z.record(z.any()).optional(),
         context: z.array(z.object({ uri: z.string(), note: z.string().optional() })).optional(),
@@ -184,6 +185,10 @@ export function createDeskServer({ desk, actor: sessionActor, name = "awl-work-d
         ),
         cost: amounts,
         tools_used: z.array(z.string()).describe('Exact tool names called, as "server/tool"'),
+        effects: z
+          .array(z.object({ ref: z.string(), tool: z.string(), arguments: z.record(z.any()), reversible: z.boolean().optional() }))
+          .optional()
+          .describe("Staged calls to run if the report is approved, as the gateway's awl_usage lists them"),
         started_at: z.string().optional(),
         finished_at: z.string().optional(),
         questions: z.array(z.string()).optional(),
@@ -200,6 +205,16 @@ export function createDeskServer({ desk, actor: sessionActor, name = "awl-work-d
   );
 
   server.registerTool(
+    "report_progress",
+    {
+      annotations: { ...MOVE, idempotentHint: false },
+      description: "Worker posts a progress note on a working order, optionally with percent done. Changes no state; managers following the order with wait_for_update see it.",
+      inputSchema: { id: idArg, actor: actorArg, note: z.string().describe("What has been done or is happening now"), percent: z.number().min(0).max(100).optional() },
+    },
+    async ({ id, actor, note, percent }) => respond(async () => summarize(await desk.progress(id, who(actor), note, percent))),
+  );
+
+  server.registerTool(
     "answer_question",
     { annotations: MOVE, description: "Manager or escalation contact answers a blocked worker; the order returns to working.", inputSchema: { id: idArg, actor: actorArg, answer: z.string() } },
     async ({ id, actor, answer }) => respond(async () => view(await desk.answer(id, who(actor), answer))),
@@ -209,10 +224,19 @@ export function createDeskServer({ desk, actor: sessionActor, name = "awl-work-d
     "review_work_report",
     {
       annotations: MOVE,
-      description: "Manager approves a submitted report, or sends it back for rework with a reason.",
-      inputSchema: { id: idArg, actor: actorArg, decision: z.enum(["approve", "rework"]), reason: z.string().optional() },
+      description:
+        "Manager approves a submitted report, or sends it back for rework with a reason. " +
+        "Approving lets the worker's gateway run the report's staged effects (or only those listed in effects); rework drops them.",
+      inputSchema: {
+        id: idArg,
+        actor: actorArg,
+        decision: z.enum(["approve", "rework"]),
+        reason: z.string().optional(),
+        effects: z.array(z.string()).optional().describe("On approve: refs of the report's effects to run. Omit to run all; [] to run none"),
+      },
     },
-    async ({ id, actor, decision, reason }) => respond(async () => view(await desk.review(id, who(actor), decision, reason))),
+    async ({ id, actor, decision, reason, effects }) =>
+      respond(async () => view(await desk.review(id, who(actor), decision, reason, effects === undefined ? {} : { effects }))),
   );
 
   server.registerTool(
@@ -234,6 +258,16 @@ export function createDeskServer({ desk, actor: sessionActor, name = "awl-work-d
       async ({ id, actor }) => respond(async () => ({ id, pass: await desk.issuePass(id, who(actor)) })),
     );
   }
+
+  server.registerTool(
+    "get_track_record",
+    {
+      annotations: READ,
+      description: "A worker's record on this desk: orders approved (first time or after rework), declined, expired and cancelled, reports by status, and spending against budget.",
+      inputSchema: { agent: z.string().describe("The worker's agent reference"), since: z.string().optional().describe("Count only orders created at or after this RFC 3339 time") },
+    },
+    async ({ agent, since }) => respond(() => desk.trackRecord(agent, since === undefined ? {} : { since })),
+  );
 
   server.registerTool(
     "wait_for_update",

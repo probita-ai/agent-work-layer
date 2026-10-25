@@ -9,6 +9,7 @@ from .models import (
     ContextRef,
     Criterion,
     Decision,
+    Effect,
     Evidence,
     Handoff,
     WorkOrder,
@@ -22,6 +23,7 @@ from .validate import (
     REPORT_SPECS,
     UNITS,
     Finding,
+    effect_references,
     has_invalid,
     held_by_sub_orders,
     is_work_order,
@@ -37,13 +39,13 @@ from .validate import (
     work_report_schema,
 )
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"
 
 __all__ = [
-    "Amounts", "Artifact", "Attempt", "ContextRef", "Criterion", "Decision", "Evidence", "Handoff",
+    "Amounts", "Artifact", "Attempt", "ContextRef", "Criterion", "Decision", "Effect", "Evidence", "Handoff",
     "WorkOrder", "WorkReport", "WorkResult",
     "ORDER_SPEC", "ORDER_SPECS", "REPORT_SPEC", "REPORT_SPECS", "UNITS", "Finding",
-    "has_invalid", "held_by_sub_orders", "is_work_order", "is_work_report", "pattern_covered", "tool_allowed",
+    "effect_references", "has_invalid", "held_by_sub_orders", "is_work_order", "is_work_report", "pattern_covered", "tool_allowed",
     "validate_child_budgets", "validate_child_order", "validate_order", "validate_own_cost", "validate_report",
     "work_order_schema", "work_report_schema",
     "__version__",

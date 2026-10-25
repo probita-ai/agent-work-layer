@@ -1,11 +1,11 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://awl.dev/schemas/work-order-0.3.json",
-  "title": "AWL Work Order v0.3",
+  "$id": "https://awl.dev/schemas/work-order-0.4.json",
+  "title": "AWL Work Order v0.4",
   "type": "object",
   "required": ["spec", "id", "created_at", "from", "to", "goal", "criteria", "budget", "deadline", "tools"],
   "properties": {
-    "spec": { "enum": ["awl/work-order@0.1", "awl/work-order@0.2", "awl/work-order@0.3"] },
+    "spec": { "enum": ["awl/work-order@0.1", "awl/work-order@0.2", "awl/work-order@0.3", "awl/work-order@0.4"] },
     "id": { "type": "string", "minLength": 1, "maxLength": 128 },
     "created_at": { "type": "string", "format": "date-time" },
     "from": { "$ref": "#/$defs/agentRef" },
@@ -27,6 +27,7 @@
     "budget": { "$ref": "#/$defs/amounts", "minProperties": 1 },
     "deadline": { "type": "string", "format": "date-time" },
     "tools": { "type": "array", "items": { "$ref": "#/$defs/toolPattern" } },
+    "staged": { "type": "array", "items": { "$ref": "#/$defs/toolPattern" } },
     "escalate_to": { "$ref": "#/$defs/agentRef" },
     "inputs": { "type": "object" },
     "context": {

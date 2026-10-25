@@ -100,7 +100,7 @@ class Handoff(_Part):
 
 
 class WorkOrder(_Document):
-    spec: Literal["awl/work-order@0.1", "awl/work-order@0.2", "awl/work-order@0.3"] = ORDER_SPEC
+    spec: Literal["awl/work-order@0.1", "awl/work-order@0.2", "awl/work-order@0.3", "awl/work-order@0.4"] = ORDER_SPEC
     id: Annotated[str, Field(min_length=1, max_length=128)]
     created_at: Timestamp
     from_: AgentRef = Field(alias="from")
@@ -111,6 +111,8 @@ class WorkOrder(_Document):
     deadline: Timestamp
     #: Tool patterns: ``server/tool``, ``server/*`` or ``*``.
     tools: List[Annotated[str, Field(pattern=r"^(\*|[A-Za-z0-9_.-]+/(\*|[A-Za-z0-9_.-]+))$")]]
+    #: Tools whose calls are held back until the report is approved (SPEC.md §4.6). Covered by ``tools``.
+    staged: Optional[List[Annotated[str, Field(pattern=r"^(\*|[A-Za-z0-9_.-]+/(\*|[A-Za-z0-9_.-]+))$")]]] = None
     escalate_to: Optional[AgentRef] = None
     inputs: Optional[Dict[str, Any]] = None
     context: Optional[List[ContextRef]] = None
@@ -141,6 +143,17 @@ class Artifact(_Part):
     note: Optional[str] = None
 
 
+class Effect(_Part):
+    """A staged call that runs only if the report is approved (SPEC.md §4.6)."""
+
+    #: The call's name, ``server/tool#n``, as the gateway gave it.
+    ref: Text
+    tool: Annotated[str, Field(pattern=r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")]
+    arguments: Dict[str, Any]
+    #: The worker's claim that the effect can be undone. Not checked.
+    reversible: Optional[bool] = None
+
+
 class WorkResult(_Part):
     summary: str
     output: Any = None
@@ -148,7 +161,7 @@ class WorkResult(_Part):
 
 
 class WorkReport(_Document):
-    spec: Literal["awl/work-report@0.1", "awl/work-report@0.2"] = REPORT_SPEC
+    spec: Literal["awl/work-report@0.1", "awl/work-report@0.2", "awl/work-report@0.3"] = REPORT_SPEC
     order_id: Text
     from_: AgentRef = Field(alias="from")
     status: Literal["done", "blocked", "failed"]
@@ -158,6 +171,8 @@ class WorkReport(_Document):
     finished_at: Timestamp
     #: Exact tool names, ``server/tool``.
     tools_used: List[Annotated[str, Field(pattern=r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")]]
+    #: Staged calls to run on approval, in order (SPEC.md §4.6).
+    effects: Optional[List[Effect]] = None
     started_at: Optional[Timestamp] = None
     attempt: Optional[Annotated[int, Field(ge=1)]] = None
     questions: Optional[List[Text]] = None

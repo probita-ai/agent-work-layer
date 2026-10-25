@@ -76,6 +76,14 @@ describe("gateway working from Delegation Passes", () => {
     ]);
   });
 
+  test("stages the pass's staged tools", async () => {
+    const { call, gateway, arrived } = await passGateway({ pass: await passFor(order({ tools: ["*"], staged: ["calc/ratio"] })) });
+    assert.equal((await call("calc__ratio")).content[0].text, "pending:calc/ratio#1");
+    assert.ok(!(await call("filings__search")).isError);
+    assert.deepEqual(arrived, ["filings/search"]);
+    assert.deepEqual((await gateway.usage()).effects, [{ ref: "calc/ratio#1", tool: "calc/ratio", arguments: {} }]);
+  });
+
   test("refuses calls with no pass, an expired pass, or a pass for another worker or order", async () => {
     let token: string | undefined;
     let now = new Date();

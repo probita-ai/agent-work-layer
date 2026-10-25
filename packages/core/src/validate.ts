@@ -5,7 +5,7 @@ import addFormatsModule from "ajv-formats";
 import type { ErrorObject, ValidateFunction } from "ajv";
 import { workOrderSchema, workReportSchema } from "./generated.ts";
 import { UNITS } from "./types.ts";
-import type { Amounts, Finding, State, WorkOrder, WorkReport } from "./types.ts";
+import type { Amounts, Effect, Finding, State, WorkOrder, WorkReport } from "./types.ts";
 
 // ajv and ajv-formats are CommonJS; their classes live on `.default` under NodeNext.
 const Ajv2020 = Ajv2020Module.default;
@@ -54,13 +54,53 @@ export function patternCovered(child: string, parent: readonly string[]): boolea
   return toolAllowed(child, parent);
 }
 
+/** Can some tool match both patterns? */
+function patternsOverlap(a: string, b: string): boolean {
+  if (a === "*" || b === "*" || a === b) return true;
+  const [serverA, toolA] = a.split("/");
+  const [serverB, toolB] = b.split("/");
+  return serverA === serverB && (toolA === "*" || toolB === "*");
+}
+
+/** A reference to an earlier effect's result in an effect's arguments (§4.6). */
+export interface EffectReference {
+  /** The earlier effect's `ref`. */
+  ref: string;
+  /** JSON Pointer into that effect's tool result. "" is the whole result. */
+  pointer: string;
+  /** JSON Pointer to the reference within the arguments. */
+  path: string;
+}
+
+/** An object whose members are `$ref` (a string) and, optionally, `pointer` (a string). */
+function isReference(value: unknown): value is { $ref: string; pointer?: string } {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const o = value as Record<string, unknown>;
+  return typeof o.$ref === "string" && (o.pointer === undefined || typeof o.pointer === "string") &&
+    Object.keys(o).every((k) => k === "$ref" || k === "pointer");
+}
+
+const escapePointer = (key: string) => key.replace(/~/g, "~0").replace(/\//g, "~1");
+
+/** Every reference to an earlier effect's result in these arguments, in document order. */
+export function effectReferences(args: Effect["arguments"]): EffectReference[] {
+  const out: EffectReference[] = [];
+  const walk = (value: unknown, path: string) => {
+    if (isReference(value)) out.push({ ref: value.$ref, pointer: value.pointer ?? "", path });
+    else if (Array.isArray(value)) value.forEach((v, i) => walk(v, `${path}/${i}`));
+    else if (value && typeof value === "object") for (const [k, v] of Object.entries(value)) walk(v, `${path}/${escapePointer(k)}`);
+  };
+  walk(args, "");
+  return out;
+}
+
 /** Type guard: structurally a Work Order (rule O1 only). */
 export const isWorkOrder = (value: unknown): value is WorkOrder => orderShape(value);
 
 /** Type guard: structurally a Work Report (rule R1 only). */
 export const isWorkReport = (value: unknown): value is WorkReport => reportShape(value);
 
-/** Runs order checks O1–O4. Returns an empty array when the order is valid. */
+/** Runs order checks O1–O5. Returns an empty array when the order is valid. */
 export function validateOrder(order: unknown): Finding[] {
   if (!orderShape(order)) return schemaFindings("O1", orderShape.errors);
   const out: Finding[] = [];
@@ -82,10 +122,14 @@ export function validateOrder(order: unknown): Finding[] {
       out.push(finding("O4", "invalid", "/output_schema", `not a valid JSON Schema: ${(e as Error).message}`));
     }
   }
+
+  order.staged?.forEach((p, i) => {
+    if (!patternCovered(p, order.tools)) out.push(finding("O5", "invalid", `/staged/${i}`, `staged "${p}" is not covered by the order's tools`));
+  });
   return out;
 }
 
-/** Runs report checks R1–R12 against the order it answers. The order is assumed valid. */
+/** Runs report checks R1–R12 and R14–R16 against the order it answers. The order is assumed valid. */
 export function validateReport(report: unknown, order: WorkOrder): Finding[] {
   if (!reportShape(report)) return schemaFindings("R1", reportShape.errors);
   const out: Finding[] = [];
@@ -129,13 +173,29 @@ export function validateReport(report: unknown, order: WorkOrder): Finding[] {
   if (report.started_at && time(report.started_at) > time(report.finished_at)) {
     add("R12", "invalid", "/started_at", "started_at is after finished_at");
   }
+
+  const refs = new Set<string>();
+  report.effects?.forEach((e, i) => {
+    if (!toolAllowed(e.tool, order.staged ?? [])) add("R14", "invalid", `/effects/${i}/tool`, `tool "${e.tool}" is not staged by this order`);
+    if (!e.ref.startsWith(`${e.tool}#`) || !/^[1-9][0-9]*$/.test(e.ref.slice(e.tool.length + 1))) add("R15", "invalid", `/effects/${i}/ref`, `ref "${e.ref}" is not "${e.tool}#<n>"`);
+    else if (refs.has(e.ref)) add("R15", "invalid", `/effects/${i}/ref`, `ref "${e.ref}" appears twice`);
+    for (const r of effectReferences(e.arguments)) {
+      const path = `/effects/${i}/arguments${r.path}`;
+      if (!refs.has(r.ref)) add("R16", "invalid", path, `"${r.ref}" is not an effect listed before this one`);
+      else if (r.pointer !== "" && !r.pointer.startsWith("/")) add("R16", "invalid", path, `"${r.pointer}" is not a JSON Pointer`);
+    }
+    refs.add(e.ref);
+  });
   return out;
 }
 
 /** The parts of an order (or a Delegation Pass) that carry authority. */
-type Authority = Pick<WorkOrder, "budget" | "tools" | "deadline">;
+type Authority = Pick<WorkOrder, "budget" | "tools" | "deadline" | "staged">;
 
-/** Runs sub-order checks C1–C3: a child order may only narrow its parent's authority. */
+/**
+ * Runs sub-order checks C1–C3 and C5: a child order may only narrow its parent's authority, and may not
+ * call the tools its parent stages, since its effects would run when its own report is approved.
+ */
 export function validateChildOrder(child: Authority, parent: Authority): Finding[] {
   const out: Finding[] = [];
   for (const unit of UNITS) {
@@ -151,6 +211,10 @@ export function validateChildOrder(child: Authority, parent: Authority): Finding
   if (time(child.deadline) > time(parent.deadline)) {
     out.push(finding("C3", "invalid", "/deadline", "later than the parent's deadline"));
   }
+  child.tools.forEach((p, i) => {
+    const staged = parent.staged?.find((s) => patternsOverlap(p, s));
+    if (staged) out.push(finding("C5", "invalid", `/tools/${i}`, `"${p}" allows "${staged}", which the parent stages`));
+  });
   return out;
 }
 

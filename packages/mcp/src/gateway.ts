@@ -1,13 +1,14 @@
 // An MCP gateway for one work order (SPEC.md §9.1): it sits between a worker and its real
-// MCP servers and enforces the order's `tools` and `budget` at every tool call.
-import { appendFile, mkdir, readFile } from "node:fs/promises";
+// MCP servers and enforces the order's `tools` and `budget` at every tool call. Calls to the
+// order's `staged` tools are held back and run only once the report is approved (§4.6).
+import { appendFile, mkdir, open, readFile, rm } from "node:fs/promises";
 import { dirname } from "node:path";
 import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import type { CallToolResult, Tool } from "@modelcontextprotocol/sdk/types.js";
-import { AwlError, PassError, decodePass, toolAllowed, verifyPass } from "agent-work-layer";
-import type { Amounts, OrderRecord, PassKeys, WorkDesk } from "agent-work-layer";
+import { AwlError, PassError, decodePass, effectReferences, toolAllowed, verifyPass } from "agent-work-layer";
+import type { Amounts, Effect, OrderRecord, PassKeys, WorkDesk } from "agent-work-layer";
 import { VERSION } from "./version.ts";
 
 export interface GatewayOptions {
@@ -47,7 +48,11 @@ export interface GatewayOptions {
 /** Why a call was refused before it reached the tool, or, when not enforcing, would have been. */
 export type RefusalCode = "UNKNOWN_TOOL" | "TOOL_NOT_ALLOWED" | "ORDER_NOT_WORKING" | "BUDGET_SPENT" | "PASS_INVALID";
 
-/** One line of the call log. Refused calls have no `n` or `ref` and do not count against the budget. */
+/**
+ * One line of the call log. Refused calls have no `n` or `ref` and do not count against the budget.
+ * A staged call is logged with its `arguments` and did not reach the tool; when it is committed
+ * after approval, a second line with the same `ref`, `commit: true` and no `n` records the result.
+ */
 export interface CallRecord {
   /** 1 for the order's first call, +1 per call that reached a tool. */
   n?: number;
@@ -60,7 +65,14 @@ export interface CallRecord {
   attempt?: number;
   jti?: string;
   at: string;
-  outcome: "ok" | "error" | "refused";
+  /** `running`: a commit is about to call the tool; a final line follows unless the process died. */
+  outcome: "ok" | "error" | "refused" | "staged" | "skipped" | "running";
+  /** Staged calls: the arguments to run them with once approved. Commits: the arguments run, when references were filled in. */
+  arguments?: Record<string, unknown>;
+  /** Set on the result of running a staged call after approval. */
+  commit?: true;
+  /** Commits: the tool's result, which later effects may refer to. */
+  result?: CallToolResult;
   ms?: number;
   refusal?: RefusalCode;
   /** Set when not enforcing: the call went through, but the order did not allow it. */
@@ -75,12 +87,39 @@ export interface Usage {
   cost: Amounts;
   /** Budget left in the units the gateway enforces. */
   remaining: Amounts;
+  /** Staged calls waiting for approval, to copy into the report's `effects`. */
+  effects: Effect[];
   calls: CallRecord[];
+}
+
+/** A staged effect run by `commit()`. */
+export interface Committed {
+  ref: string;
+  tool: string;
+  /**
+   * `skipped`: not run, because an effect it uses did not succeed or has no value at the pointer.
+   * `error` includes an effect an earlier commit started but never finished: it may have run, so it is not run again.
+   */
+  outcome: "ok" | "error" | "skipped";
+  /** The tool's result. Absent when an earlier commit already ran this effect, or when it was skipped. */
+  result?: CallToolResult;
+  /** Why it was skipped. */
+  message?: string;
+  /** An earlier commit ran it; it was not run again. */
+  earlier?: true;
 }
 
 export interface Gateway {
   server: Server;
   usage(): Promise<Usage>;
+  /**
+   * Runs the staged effects of the order's approved report that the approval chose (all, by default),
+   * in the order listed, filling in references to earlier effects' results, and logs each result. Needs
+   * the desk. Refuses, running nothing, unless the order is `approved` and every effect to run matches a
+   * staged call in the log with the same tool and arguments, made since the last rework. An effect whose
+   * reference cannot be filled in is skipped. Effects an earlier commit ran or skipped are not run again.
+   */
+  commit(): Promise<Committed[]>;
 }
 
 export const USAGE_TOOL = "awl_usage";
@@ -95,6 +134,62 @@ class Refusal extends Error {
 }
 
 const text = (value: unknown) => ({ type: "text" as const, text: typeof value === "string" ? value : JSON.stringify(value, null, 2) });
+
+/** Staged calls made up to this report attempt were dropped by a rework: the reports before the last rework. */
+function reworkedThrough(record: OrderRecord): number {
+  let reports = 0;
+  let through = 0;
+  for (const e of record.events) {
+    if (e.action.startsWith("report_")) reports++;
+    else if (e.action === "rework") through = reports;
+  }
+  return through;
+}
+
+/** JSON with object keys sorted, so the same arguments always compare equal. */
+function canonical(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
+  if (value && typeof value === "object") {
+    const o = value as Record<string, unknown>;
+    return `{${Object.keys(o).sort().map((k) => `${JSON.stringify(k)}:${canonical(o[k])}`).join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
+/** The value a JSON Pointer (RFC 6901) names in `doc`, or undefined when there is none. */
+function atPointer(doc: unknown, pointer: string): unknown {
+  if (pointer === "") return doc;
+  let value = doc;
+  for (const raw of pointer.slice(1).split("/")) {
+    const key = raw.replace(/~1/g, "/").replace(/~0/g, "~");
+    if (value === null || typeof value !== "object" || !Object.prototype.hasOwnProperty.call(value, key)) return undefined;
+    value = (value as Record<string, unknown>)[key];
+  }
+  return value;
+}
+
+/**
+ * A copy of `args` with every reference to an earlier effect replaced by the value it names in that
+ * effect's result (§4.6). Throws when an effect it uses did not succeed or has nothing at the pointer.
+ */
+function fillReferences(args: Record<string, unknown>, results: ReadonlyMap<string, CallToolResult>): Record<string, unknown> {
+  let out: unknown = structuredClone(args);
+  for (const r of effectReferences(args)) {
+    const result = results.get(r.ref);
+    if (!result) throw new Error(`"${r.ref}" did not succeed`);
+    const value = atPointer(result, r.pointer);
+    if (value === undefined) throw new Error(`the result of "${r.ref}" has nothing at "${r.pointer}"`);
+    if (r.path === "") {
+      out = value;
+      continue;
+    }
+    const keys = r.path.slice(1).split("/").map((k) => k.replace(/~1/g, "/").replace(/~0/g, "~"));
+    const parent = keys.slice(0, -1).reduce((o, k) => (o as Record<string, unknown>)[k], out) as Record<string, unknown>;
+    parent[keys.at(-1)!] = value;
+  }
+  if (!out || typeof out !== "object" || Array.isArray(out)) throw new Error("the arguments must be an object");
+  return out as Record<string, unknown>;
+}
 
 /** Seconds since the order was first started, or undefined if it has not been. */
 function workingSeconds(record: OrderRecord, now: Date): number | undefined {
@@ -114,6 +209,8 @@ async function loadLog(file: string): Promise<CallRecord[]> {
 /** What a call runs under: from the desk's record, or from a verified pass. */
 interface Authority {
   tools: readonly string[];
+  /** Tools whose calls are held back until approval. */
+  staged: readonly string[];
   budget: Amounts;
   attempt?: number;
   jti?: string;
@@ -121,6 +218,8 @@ interface Authority {
   worked?: number;
   /** Budget the order's sub-orders hold, which it may not spend itself (§8); unknown in pass mode. */
   held?: Amounts;
+  /** Staged calls up to this attempt were dropped by a rework; unknown in pass mode. */
+  dropped?: number;
   /** Why no call may run under it right now. */
   refusal?: Refusal;
 }
@@ -130,13 +229,15 @@ interface Authority {
  * and refuses calls that are not allowed, that come after the `tool_calls` or `seconds` budget
  * is spent (less the tool calls its sub-orders hold), or while the order is not `working`. With `passKeys` it enforces a Delegation Pass
  * instead of the desk's order state. With `enforce: false` it logs those calls instead of
- * refusing them. Connect it to any transport.
+ * refusing them. Calls to the order's `staged` tools are counted and logged but not forwarded;
+ * `commit()` runs them once the report is approved. Connect it to any transport.
  */
 export async function createGateway(options: GatewayOptions): Promise<Gateway> {
   const { desk, orderId, upstreams, logFile, passKeys, issuer, enforce = true, separator = "__", clock = () => new Date(), name = "awl-gateway" } = options;
   let actor: string;
   // In desk mode the order's tools are fixed, so they are read once.
   let deskTools: readonly string[] | undefined;
+  let deskStaged: readonly string[] = [];
   if (passKeys) {
     if (!options.actor) throw new AwlError("BAD_REQUEST", "a gateway that works from passes needs the worker's actor");
     actor = options.actor;
@@ -146,6 +247,7 @@ export async function createGateway(options: GatewayOptions): Promise<Gateway> {
     actor = options.actor ?? order.to;
     if (actor !== order.to) throw new AwlError("FORBIDDEN", `only the order's worker "${order.to}" can use its gateway, not "${actor}"`);
     deskTools = order.tools;
+    deskStaged = order.staged ?? [];
   }
 
   const calls: CallRecord[] = logFile ? await loadLog(logFile) : [];
@@ -176,11 +278,13 @@ export async function createGateway(options: GatewayOptions): Promise<Gateway> {
     }
     return {
       tools: record.order.tools,
+      staged: record.order.staged ?? [],
       budget: record.order.budget,
       attempt: record.reports.length + 1,
       ...(record.pass ? { jti: decodePass(record.pass).jti } : {}),
       worked: workingSeconds(record, clock()),
       held: await desk!.held(orderId),
+      dropped: reworkedThrough(record),
       ...(record.state !== "working" ? { refusal: new Refusal("ORDER_NOT_WORKING", `order "${orderId}" is ${record.state}`) } : {}),
     };
   }
@@ -188,13 +292,13 @@ export async function createGateway(options: GatewayOptions): Promise<Gateway> {
   async function fromPass(meta?: Record<string, unknown>): Promise<Authority> {
     const given = meta?.["awl/pass"];
     const token = typeof given === "string" ? given : typeof options.pass === "function" ? await options.pass() : options.pass;
-    if (!token) return { tools: [], budget: {}, refusal: new Refusal("PASS_INVALID", `no Delegation Pass for order "${orderId}"`) };
+    if (!token) return { tools: [], staged: [], budget: {}, refusal: new Refusal("PASS_INVALID", `no Delegation Pass for order "${orderId}"`) };
     try {
       const { claims } = await verifyPass(token, passKeys!, { issuer, worker: actor, order: orderId, now: clock() });
-      return { tools: claims.awl_tools, budget: claims.awl_budget, attempt: claims.awl_attempt, jti: claims.jti };
+      return { tools: claims.awl_tools, staged: claims.awl_staged ?? [], budget: claims.awl_budget, attempt: claims.awl_attempt, jti: claims.jti };
     } catch (e) {
       if (!(e instanceof PassError)) throw e;
-      return { tools: [], budget: {}, refusal: new Refusal("PASS_INVALID", `${e.code}: ${e.message}`) };
+      return { tools: [], staged: [], budget: {}, refusal: new Refusal("PASS_INVALID", `${e.code}: ${e.message}`) };
     }
   }
 
@@ -205,9 +309,11 @@ export async function createGateway(options: GatewayOptions): Promise<Gateway> {
 
   async function listUpstream(meta?: Record<string, unknown>): Promise<Tool[]> {
     let allowedTools: readonly string[] = deskTools ?? [];
+    let staged = deskStaged;
     if (passKeys) {
       const current = await authority(meta);
       allowedTools = current.refusal ? [] : current.tools;
+      staged = current.staged;
     }
     const next = new Map<string, { server: string; tool: string }>();
     const exposed: Tool[] = [];
@@ -219,7 +325,8 @@ export async function createGateway(options: GatewayOptions): Promise<Gateway> {
           const exposedName = `${server}${separator}${tool.name}`;
           next.set(exposedName, { server, tool: tool.name });
           if (!enforce || toolAllowed(`${server}/${tool.name}`, allowedTools)) {
-            exposed.push({ ...tool, name: exposedName, description: `[${server}] ${tool.description ?? ""}`.trim() });
+            const note = toolAllowed(`${server}/${tool.name}`, staged) ? " (Staged: returns a placeholder and runs only if the work report is approved.)" : "";
+            exposed.push({ ...tool, name: exposedName, description: `[${server}] ${tool.description ?? ""}`.trim() + note });
           }
         }
         cursor = page.nextCursor;
@@ -238,7 +345,112 @@ export async function createGateway(options: GatewayOptions): Promise<Gateway> {
     if (budget.tool_calls !== undefined) remaining.tool_calls = Math.max(0, budget.tool_calls - (current?.held?.tool_calls ?? 0) - count);
     if (budget.seconds !== undefined && seconds !== undefined) remaining.seconds = Math.max(0, budget.seconds - seconds);
     const tools_used = [...new Set(calls.filter((c) => c.n !== undefined).map((c) => c.tool))];
-    return { order_id: orderId, tools_used, cost, remaining, calls: [...calls] };
+    const effects = pending(current?.dropped ?? 0).map((c) => ({ ref: c.ref!, tool: c.tool, arguments: c.arguments ?? {} }));
+    return { order_id: orderId, tools_used, cost, remaining, effects, calls: [...calls] };
+  }
+
+  /** Staged calls not dropped by a rework and not yet committed. */
+  function pending(dropped: number): CallRecord[] {
+    const committed = new Set(calls.filter((c) => c.commit).map((c) => c.ref));
+    return calls.filter((c) => c.outcome === "staged" && (c.attempt === undefined || c.attempt > dropped) && !committed.has(c.ref));
+  }
+
+  let committing: Promise<unknown> = Promise.resolve();
+
+  async function runCommit(): Promise<Committed[]> {
+    if (!desk || passKeys) throw new AwlError("BAD_REQUEST", "committing staged effects needs the desk, to see that the report was approved");
+    const record = await desk.get(orderId);
+    if (record.state !== "approved") {
+      throw new AwlError("INVALID_TRANSITION", `order "${orderId}" is ${record.state}; staged effects run only once its report is approved`);
+    }
+    // The approval may have chosen some of the report's effects (§4.6).
+    const approved = [...record.events].reverse().find((e) => e.action === "approve")?.effects;
+    const effects = (record.reports.at(-1)?.effects ?? []).filter((e) => !approved || approved.includes(e.ref));
+    const dropped = reworkedThrough(record);
+    // The file, not memory, so effects another process committed (e.g. `--commit`) are not run again.
+    await logging;
+    const logged = logFile ? await loadLog(logFile) : calls;
+    const staged = new Map(logged.filter((c) => c.outcome === "staged" && (c.attempt === undefined || c.attempt > dropped)).map((c) => [c.ref, c]));
+    // All effects are checked before any runs, so a report that doesn't match the log runs nothing.
+    for (const e of effects) {
+      const call = staged.get(e.ref);
+      if (!call || call.tool !== e.tool || canonical(call.arguments ?? {}) !== canonical(e.arguments)) {
+        throw new AwlError("CONFLICT", `effect "${e.ref}" does not match a staged call in the gateway's log; nothing was run`);
+      }
+    }
+
+    const earlier = new Map(logged.filter((c) => c.commit).map((c) => [c.ref, c]));
+    /** Results of effects that succeeded, for later effects that refer to them. */
+    const results = new Map<string, CallToolResult>();
+    const out: Committed[] = [];
+    for (const e of effects) {
+      const before = earlier.get(e.ref);
+      const { attempt, jti } = staged.get(e.ref)!;
+      const base = { ref: e.ref, tool: e.tool, order_id: orderId, ...grant({ attempt, jti }), at: clock().toISOString(), commit: true as const };
+      if (before?.outcome === "running") {
+        // An earlier commit died while calling the tool. It may have run, so it is settled as an error, not retried.
+        const message = "an earlier commit was interrupted while running it; it may have run, so it is not run again";
+        await log({ ...base, outcome: "error", message });
+        out.push({ ref: e.ref, tool: e.tool, outcome: "error", message, earlier: true });
+        continue;
+      }
+      if (before) {
+        if (before.outcome === "ok" && before.result) results.set(e.ref, before.result);
+        out.push({ ref: e.ref, tool: e.tool, outcome: before.outcome as Committed["outcome"], earlier: true });
+        continue;
+      }
+      let args: Record<string, unknown>;
+      try {
+        args = fillReferences(e.arguments, results);
+      } catch (err) {
+        const message = `skipped: ${(err as Error).message}`;
+        await log({ ...base, outcome: "skipped", message });
+        out.push({ ref: e.ref, tool: e.tool, outcome: "skipped", message });
+        continue;
+      }
+      const [serverName, tool] = e.tool.split("/");
+      // Logged before the call, so a crash during it is never mistaken for an effect that did not run.
+      await log({ ...base, outcome: "running" });
+      const started = Date.now();
+      let result: CallToolResult;
+      try {
+        const client = upstreams[serverName];
+        if (!client) throw new Error(`no upstream server "${serverName}"`);
+        result = (await client.callTool({ name: tool, arguments: args })) as CallToolResult;
+      } catch (err) {
+        result = { isError: true, content: [text(`call failed: ${(err as Error).message}`)] };
+      }
+      const outcome = result.isError ? "error" : "ok";
+      const filled = canonical(args) !== canonical(e.arguments);
+      await log({ ...base, outcome, ms: Date.now() - started, result, ...(filled ? { arguments: args } : {}) });
+      if (outcome === "ok") results.set(e.ref, result);
+      out.push({ ref: e.ref, tool: e.tool, outcome, result });
+    }
+    return out;
+  }
+
+  /**
+   * One commit at a time, so an effect never runs twice: in this process by queueing, and across
+   * processes sharing the log by a lock file next to it.
+   */
+  function commit(): Promise<Committed[]> {
+    const next = committing.then(async () => {
+      if (!logFile) return runCommit();
+      const lock = `${logFile}.commit-lock`;
+      await mkdir(dirname(lock), { recursive: true });
+      const handle = await open(lock, "wx").catch((e: NodeJS.ErrnoException) => {
+        if (e.code !== "EEXIST") throw e;
+        throw new AwlError("CONFLICT", `another commit for order "${orderId}" is running; if one crashed, check the log and remove ${lock}`);
+      });
+      try {
+        return await runCommit();
+      } finally {
+        await handle.close();
+        await rm(lock, { force: true });
+      }
+    });
+    committing = next.catch(() => {});
+    return next;
   }
 
   /**
@@ -269,8 +481,8 @@ export async function createGateway(options: GatewayOptions): Promise<Gateway> {
       {
         name: USAGE_TOOL,
         description:
-          `Tool calls and time spent on order "${orderId}" so far, with each call's evidence ref. ` +
-          "Copy tools_used and cost into your work report, and cite refs as tool_call evidence.",
+          `Tool calls and time spent on order "${orderId}" so far, with each call's evidence ref, and the staged calls waiting for approval. ` +
+          "Copy tools_used, cost and effects into your work report, and cite refs as tool_call evidence.",
         inputSchema: { type: "object", properties: {} },
         annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
       },
@@ -301,6 +513,31 @@ export async function createGateway(options: GatewayOptions): Promise<Gateway> {
 
     const { n, secondsLeft, violation } = admitted;
     const ref = `${qualified}#${n}`;
+    const tags = {
+      "awl/ref": ref, "awl/order": orderId,
+      ...(auth?.attempt !== undefined ? { "awl/attempt": auth.attempt } : {}),
+      ...(auth?.jti ? { "awl/jti": auth.jti } : {}),
+      ...(violation ? { "awl/violation": violation.code } : {}),
+    };
+
+    if (toolAllowed(qualified, auth?.staged ?? [])) {
+      const args = request.params.arguments ?? {};
+      await log({
+        n, ref, tool: qualified, order_id: orderId, ...grant(auth), at, outcome: "staged", arguments: args,
+        ...(violation ? { violation: violation.code, message: violation.message } : {}),
+      });
+      return {
+        content: [
+          text(`pending:${ref}`),
+          text(
+            `[awl evidence ref: ${ref}; staged: it runs only if the work report is approved, so list it in the report's effects. ` +
+            `To use its result in a later staged call, pass {"$ref": "${ref}", "pointer": "<JSON Pointer into the result>"}]`,
+          ),
+        ],
+        _meta: { ...tags, "awl/staged": true },
+      };
+    }
+
     const started = Date.now();
     const timeout = secondsLeft === undefined ? undefined : Math.max(1, Math.floor(secondsLeft * 1000));
     let result: CallToolResult;
@@ -321,20 +558,15 @@ export async function createGateway(options: GatewayOptions): Promise<Gateway> {
     return {
       ...result,
       content: [...(result.content ?? []), text(note)],
-      _meta: {
-        ...result._meta, "awl/ref": ref, "awl/order": orderId,
-        ...(auth?.attempt !== undefined ? { "awl/attempt": auth.attempt } : {}),
-        ...(auth?.jti ? { "awl/jti": auth.jti } : {}),
-        ...(violation ? { "awl/violation": violation.code } : {}),
-      },
+      _meta: { ...result._meta, ...tags },
     };
   });
 
-  return { server, usage };
+  return { server, usage, commit };
 }
 
 /** The attempt and pass id a call ran under, for its call record. */
-const grant = (auth?: Authority) => ({
+const grant = (auth?: Pick<Authority, "attempt" | "jti">) => ({
   ...(auth?.attempt !== undefined ? { attempt: auth.attempt } : {}),
   ...(auth?.jti ? { jti: auth.jti } : {}),
 });

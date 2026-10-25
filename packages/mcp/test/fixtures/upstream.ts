@@ -8,6 +8,7 @@ const TOOLS: Record<string, string[]> = {
   filings: ["search", "get_section", "broken"],
   calc: ["ratio", "eval"],
   shell: ["exec"],
+  gmail: ["send", "draft"],
 };
 
 /** An MCP server named `name` whose tools echo their arguments. `calls` records every call that arrived. */

@@ -102,14 +102,14 @@ export function createDeskServer({ desk, actor: sessionActor, name = "awl-work-d
         tools: z.array(z.string()).describe('Allowed tools: "server/tool", "server/*" or "*"'),
         staged: z.array(z.string()).optional().describe("Tools, among those allowed, whose calls the worker's gateway holds back until you approve the report"),
         escalate_to: z.string().optional(),
-        inputs: z.record(z.any()).optional(),
+        inputs: z.record(z.string(), z.any()).optional(),
         context: z.array(z.object({ uri: z.string(), note: z.string().optional() })).optional(),
         handoff: handoff.optional().describe("What a previous worker learned: decisions, what was tried, open questions, next step"),
-        output_schema: z.record(z.any()).optional().describe("JSON Schema that result.output must match"),
+        output_schema: z.record(z.string(), z.any()).optional().describe("JSON Schema that result.output must match"),
         parent_id: z.string().optional(),
         continues: z.string().optional().describe("Id of the finished order this one picks up from"),
         id: z.string().optional().describe("Optional explicit id"),
-        metadata: z.record(z.any()).optional(),
+        metadata: z.record(z.string(), z.any()).optional(),
       },
     },
     async ({ actor, ...input }) => respond(async () => view(await desk.create(defined(input) as WorkOrderInput, who(actor)))),
@@ -186,7 +186,7 @@ export function createDeskServer({ desk, actor: sessionActor, name = "awl-work-d
         cost: amounts,
         tools_used: z.array(z.string()).describe('Exact tool names called, as "server/tool"'),
         effects: z
-          .array(z.object({ ref: z.string(), tool: z.string(), arguments: z.record(z.any()), reversible: z.boolean().optional() }))
+          .array(z.object({ ref: z.string(), tool: z.string(), arguments: z.record(z.string(), z.any()), reversible: z.boolean().optional() }))
           .optional()
           .describe("Staged calls to run if the report is approved, as the gateway's awl_usage lists them"),
         started_at: z.string().optional(),
@@ -194,7 +194,7 @@ export function createDeskServer({ desk, actor: sessionActor, name = "awl-work-d
         questions: z.array(z.string()).optional(),
         error: z.string().optional(),
         handoff: handoff.optional().describe("For whoever continues this job: decisions, what was tried, open questions, next step"),
-        metadata: z.record(z.any()).optional(),
+        metadata: z.record(z.string(), z.any()).optional(),
       },
     },
     async ({ id, actor, ...input }) =>

@@ -46,7 +46,7 @@ export interface GatewayOptions {
 }
 
 /** Why a call was refused before it reached the tool, or, when not enforcing, would have been. */
-export type RefusalCode = "UNKNOWN_TOOL" | "TOOL_NOT_ALLOWED" | "ORDER_NOT_WORKING" | "BUDGET_SPENT" | "PASS_INVALID";
+export type RefusalCode = "UNKNOWN_TOOL" | "TOOL_NOT_ALLOWED" | "ORDER_NOT_WORKING" | "BUDGET_SPENT" | "PASS_INVALID" | "PENDING_REFERENCE";
 
 /**
  * One line of the call log. Refused calls have no `n` or `ref` and do not count against the budget.
@@ -166,6 +166,14 @@ function atPointer(doc: unknown, pointer: string): unknown {
     value = (value as Record<string, unknown>)[key];
   }
   return value;
+}
+
+/** The first reference in `args` to a call of a staged tool, which has no result until approval (§4.6). */
+function pendingReference(args: Record<string, unknown>, staged: readonly string[]): string | undefined {
+  return effectReferences(args).find((r) => {
+    const hash = r.ref.lastIndexOf("#");
+    return hash > 0 && /^\d+$/.test(r.ref.slice(hash + 1)) && toolAllowed(r.ref.slice(0, hash), staged);
+  })?.ref;
 }
 
 /**
@@ -457,13 +465,15 @@ export async function createGateway(options: GatewayOptions): Promise<Gateway> {
    * Checks the call against the order (or its pass) and reserves its number. Returns the seconds
    * left when enforcing a time limit, and what the order would refuse when not enforcing.
    */
-  async function admit(server: string, tool: string, auth: Authority): Promise<{ n: number; secondsLeft?: number; violation?: Refusal }> {
+  async function admit(server: string, tool: string, args: Record<string, unknown>, auth: Authority): Promise<{ n: number; secondsLeft?: number; violation?: Refusal }> {
     const { tool_calls, seconds } = auth.budget;
+    const pending = toolAllowed(`${server}/${tool}`, auth.staged) ? undefined : pendingReference(args, auth.staged);
     const held = auth.held?.tool_calls ?? 0;
     const secondsLeft = seconds === undefined || passKeys ? undefined : seconds - (auth.worked ?? 0);
     const violation =
       auth.refusal ? auth.refusal
       : !toolAllowed(`${server}/${tool}`, auth.tools) ? new Refusal("TOOL_NOT_ALLOWED", `"${server}/${tool}" is not allowed by order "${orderId}"`)
+      : pending ? new Refusal("PENDING_REFERENCE", `"${server}/${tool}" is not staged, so its arguments cannot use "${pending}": that result exists only once the work report is approved`)
       : tool_calls !== undefined && count >= tool_calls - held ? new Refusal("BUDGET_SPENT", held ? `this order's own tool calls are spent: sub-orders hold ${held} of ${tool_calls}` : `all ${tool_calls} tool calls are spent`)
       : secondsLeft !== undefined && secondsLeft <= 0 ? new Refusal("BUDGET_SPENT", `all ${seconds} seconds are spent`)
       : undefined;
@@ -503,7 +513,7 @@ export async function createGateway(options: GatewayOptions): Promise<Gateway> {
     try {
       if (!route) throw new Refusal("UNKNOWN_TOOL", `no tool "${exposedName}" on this gateway`);
       auth = await authority(request.params._meta);
-      admitted = await admit(route.server, route.tool, auth);
+      admitted = await admit(route.server, route.tool, request.params.arguments ?? {}, auth);
     } catch (e) {
       if (e instanceof AwlError) return { isError: true, content: [text(e.toJSON())] };
       if (!(e instanceof Refusal)) throw e;

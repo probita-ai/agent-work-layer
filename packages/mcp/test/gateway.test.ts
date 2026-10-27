@@ -388,6 +388,31 @@ describe("MCP gateway with staged tools", () => {
     assert.deepEqual([sent.commit, sent.arguments], [true, { q: "gmail/draft(Q3 risks)" }]);
   });
 
+  test("refuses a reference to a staged call in a call that is not staged, without counting it", async () => {
+    const s = await setup(STAGED);
+    await s.call("gmail__send", { q: "hello" });
+    const r = await s.call("gmail__draft", { q: { $ref: "gmail/send#1", pointer: "/content/0/text" } });
+    assert.equal(r.ok, false);
+    assert.equal(r.body.code, "PENDING_REFERENCE");
+    assert.match(r.body.message, /"gmail\/send#1"/);
+    // A $ref that names no staged call, like a JSON Schema's, is just an argument.
+    assert.ok((await s.call("filings__search", { schema: { $ref: "#/definitions/q" } })).ok);
+    assert.deepEqual(s.arrived, ["filings/search"]);
+    const usage = await s.gateway.usage();
+    assert.equal(usage.cost.tool_calls, 2);
+    assert.deepEqual(usage.calls.map((c) => c.outcome), ["staged", "refused", "ok"]);
+  });
+
+  test("with enforce: false, a reference to a staged call goes through and is logged as a violation", async () => {
+    const s = await setup(STAGED, { enforce: false });
+    await s.call("gmail__send", { q: "hello" });
+    const r = await s.call("gmail__draft", { issue: { $ref: "gmail/send#1" } });
+    assert.ok(r.ok);
+    assert.equal(r.meta?.["awl/violation"], "PENDING_REFERENCE");
+    assert.deepEqual(s.arrived, ["gmail/draft"]);
+    assert.equal((await s.gateway.usage()).calls[1].violation, "PENDING_REFERENCE");
+  });
+
   test("skips an effect whose reference cannot be filled in, and the effects that use it", async () => {
     const logFile = join(tempDir(), "calls", "order.jsonl");
     const s = await setup({ tools: ["*"], staged: ["filings/broken", "gmail/*"] }, { logFile });

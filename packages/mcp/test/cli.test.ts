@@ -1,7 +1,7 @@
 import { describe, test, after } from "node:test";
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
-import { readFileSync, writeFileSync } from "node:fs";
+import { spawn, spawnSync } from "node:child_process";
+import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { FileStore, WorkDesk } from "agent-work-layer";
 import { fileURLToPath } from "node:url";
@@ -9,10 +9,12 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { VERSION } from "../src/version.ts";
 import { MANAGER, WORKER, orderInput, reportInput, tempDir } from "./helpers.ts";
+import { deliveries } from "./fixtures/receiver.ts";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const cli = join(root, "src", "cli.ts");
 const upstream = join(root, "test", "fixtures", "upstream.ts");
+const receiver = join(root, "test", "fixtures", "receiver.ts");
 
 describe("awl-desk CLI", () => {
   test("--version and --help", () => {
@@ -132,5 +134,80 @@ describe("awl-desk gateway", () => {
 
     const r = spawnSync(process.execPath, [...gateway, "--commit", "--pass-keys", config, "--actor", WORKER], { encoding: "utf8" });
     assert.equal(r.status, 2);
+  });
+});
+
+// Where a commit can stop between the gateway and the service it calls. The receiver counts what reached
+// it on its own, so these check the gateway's log against what actually happened.
+describe("--commit at the crash boundaries", () => {
+  /** An approved order whose report has one staged gmail/send, and a receiver in `mode` behind the gateway. */
+  async function approved(mode: string) {
+    const store = tempDir();
+    const sent = join(store, "deliveries.jsonl");
+    const config = join(store, "upstream.json");
+    const setMode = (m: string) =>
+      writeFileSync(config, JSON.stringify({ mcpServers: { gmail: { command: process.execPath, args: [receiver, sent, m] } } }));
+    setMode(mode);
+
+    const desk = new WorkDesk({ store: new FileStore(store) });
+    const id = (await desk.create(orderInput({ tools: ["gmail/*"], staged: ["gmail/send"] }), MANAGER)).order.id;
+    await desk.accept(id, WORKER);
+    const gateway = [cli, "gateway", "--order", id, "--config", config, "--store", store];
+    const client = new Client({ name: WORKER, version: "0" });
+    await client.connect(new StdioClientTransport({ command: process.execPath, args: gateway, stderr: "ignore" }));
+    try {
+      await client.callTool({ name: "gmail__send", arguments: { q: "hi" } });
+    } finally {
+      await client.close();
+    }
+    const effects = [{ ref: "gmail/send#1", tool: "gmail/send", arguments: { q: "hi" } }];
+    await desk.submitReport(id, reportInput({ tools_used: ["gmail/send"], cost: { usd: 0.1, tool_calls: 1 }, effects }), WORKER);
+    await desk.review(id, MANAGER, "approve");
+
+    const commit = () => {
+      const r = spawnSync(process.execPath, [...gateway, "--commit"], { encoding: "utf8" });
+      assert.equal(r.status, 0, r.stderr);
+      return JSON.parse(r.stdout)[0] as { outcome: string; message?: string; earlier?: true };
+    };
+    return { id, store, sent, gateway, setMode, commit };
+  }
+
+  test("the receiver acts on the call and the gateway dies before the answer: unknown, never sent again", async () => {
+    const s = await approved("hang");
+    const child = spawn(process.execPath, [...s.gateway, "--commit"], { stdio: "ignore" });
+    for (let i = 0; i < 200 && deliveries(s.sent).length === 0; i++) await new Promise((r) => setTimeout(r, 50));
+    child.kill("SIGKILL");
+    await new Promise((r) => child.once("exit", r));
+    s.setMode("answer");
+
+    // The dead commit left its lock; whoever restarts it checks the log and removes it.
+    const locked = spawnSync(process.execPath, [...s.gateway, "--commit"], { encoding: "utf8" });
+    assert.equal(locked.status, 1);
+    assert.match(locked.stderr, /commit-lock/);
+    rmSync(join(s.store, "calls", `${s.id}.jsonl.commit-lock`), { force: true });
+
+    const settled = s.commit();
+    assert.deepEqual([settled.outcome, settled.earlier], ["unknown", true]);
+    assert.match(settled.message!, /interrupted/);
+    assert.equal(s.commit().outcome, "unknown");
+    assert.deepEqual(deliveries(s.sent), [{ tool: "gmail/send", q: "hi", ref: "gmail/send#1", order: s.id }]);
+  });
+
+  test("the receiver acts on the call and the answer is lost: unknown, never sent again", async () => {
+    const s = await approved("exit");
+    const lost = s.commit();
+    assert.equal(lost.outcome, "unknown");
+    assert.match(lost.message!, /no answer from the tool/);
+    s.setMode("answer");
+    assert.deepEqual([s.commit().outcome, s.commit().outcome], ["unknown", "unknown"]);
+    assert.equal(deliveries(s.sent).length, 1);
+  });
+
+  test("a recorded result is not sent again when --commit repeats", async () => {
+    const s = await approved("answer");
+    assert.equal(s.commit().outcome, "ok");
+    const again = s.commit();
+    assert.deepEqual([again.outcome, again.earlier], ["ok", true]);
+    assert.equal(deliveries(s.sent).length, 1);
   });
 });

@@ -70,5 +70,9 @@
   "homepage": "https://github.com/probita-ai/agent-work-layer#readme",
   "bugs": {
     "url": "https://github.com/probita-ai/agent-work-layer/issues"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "typescript": "^7.0.2"
   }
 }

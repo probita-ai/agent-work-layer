@@ -5,7 +5,7 @@ import { appendFile, mkdir, open, readFile, rm } from "node:fs/promises";
 import { dirname } from "node:path";
 import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
-import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
+import { CallToolRequestSchema, ErrorCode, ListToolsRequestSchema, McpError } from "@modelcontextprotocol/sdk/types.js";
 import type { CallToolResult, Tool } from "@modelcontextprotocol/sdk/types.js";
 import { AwlError, PassError, decodePass, effectReferences, toolAllowed, verifyPass } from "agent-work-layer";
 import type { Amounts, Effect, OrderRecord, PassKeys, WorkDesk } from "agent-work-layer";
@@ -65,8 +65,11 @@ export interface CallRecord {
   attempt?: number;
   jti?: string;
   at: string;
-  /** `running`: a commit is about to call the tool; a final line follows unless the process died. */
-  outcome: "ok" | "error" | "refused" | "staged" | "skipped" | "running";
+  /**
+   * `running`: a commit is about to call the tool; a final line follows unless the process died.
+   * `unknown`: a commit sent the call but got no answer, so the effect may or may not have happened.
+   */
+  outcome: "ok" | "error" | "refused" | "staged" | "skipped" | "running" | "unknown";
   /** Staged calls: the arguments to run them with once approved. Commits: the arguments run, when references were filled in. */
   arguments?: Record<string, unknown>;
   /** Set on the result of running a staged call after approval. */
@@ -97,13 +100,15 @@ export interface Committed {
   ref: string;
   tool: string;
   /**
-   * `skipped`: not run, because an effect it uses did not succeed or has no value at the pointer.
-   * `error` includes an effect an earlier commit started but never finished: it may have run, so it is not run again.
+   * `error`: the tool returned an error. `skipped`: not run, because an effect it uses did not succeed or
+   * has no value at the pointer. `unknown`: the call was sent but no answer came back (the connection
+   * failed, or an earlier commit died during it), so it may have happened. It is never run again; check
+   * with the receiver, which got the effect's ref in `_meta["awl/ref"]`.
    */
-  outcome: "ok" | "error" | "skipped";
+  outcome: "ok" | "error" | "skipped" | "unknown";
   /** The tool's result. Absent when an earlier commit already ran this effect, or when it was skipped. */
   result?: CallToolResult;
-  /** Why it was skipped. */
+  /** Why it was skipped, or why its outcome is unknown. */
   message?: string;
   /** An earlier commit ran it; it was not run again. */
   earlier?: true;
@@ -396,15 +401,15 @@ export async function createGateway(options: GatewayOptions): Promise<Gateway> {
       const { attempt, jti } = staged.get(e.ref)!;
       const base = { ref: e.ref, tool: e.tool, order_id: orderId, ...grant({ attempt, jti }), at: clock().toISOString(), commit: true as const };
       if (before?.outcome === "running") {
-        // An earlier commit died while calling the tool. It may have run, so it is settled as an error, not retried.
+        // An earlier commit died while calling the tool. It may have run, so it is settled as unknown, not retried.
         const message = "an earlier commit was interrupted while running it; it may have run, so it is not run again";
-        await log({ ...base, outcome: "error", message });
-        out.push({ ref: e.ref, tool: e.tool, outcome: "error", message, earlier: true });
+        await log({ ...base, outcome: "unknown", message });
+        out.push({ ref: e.ref, tool: e.tool, outcome: "unknown", message, earlier: true });
         continue;
       }
       if (before) {
         if (before.outcome === "ok" && before.result) results.set(e.ref, before.result);
-        out.push({ ref: e.ref, tool: e.tool, outcome: before.outcome as Committed["outcome"], earlier: true });
+        out.push({ ref: e.ref, tool: e.tool, outcome: before.outcome as Committed["outcome"], ...(before.message ? { message: before.message } : {}), earlier: true });
         continue;
       }
       let args: Record<string, unknown>;
@@ -417,20 +422,34 @@ export async function createGateway(options: GatewayOptions): Promise<Gateway> {
         continue;
       }
       const [serverName, tool] = e.tool.split("/");
+      const filled = canonical(args) !== canonical(e.arguments) ? { arguments: args } : {};
+      const client = upstreams[serverName];
+      if (!client) {
+        const message = `no upstream server "${serverName}"`;
+        await log({ ...base, outcome: "error", message, ...filled });
+        out.push({ ref: e.ref, tool: e.tool, outcome: "error", message });
+        continue;
+      }
       // Logged before the call, so a crash during it is never mistaken for an effect that did not run.
       await log({ ...base, outcome: "running" });
       const started = Date.now();
       let result: CallToolResult;
       try {
-        const client = upstreams[serverName];
-        if (!client) throw new Error(`no upstream server "${serverName}"`);
-        result = (await client.callTool({ name: tool, arguments: args })) as CallToolResult;
+        // The ref lets the receiver drop a duplicate, and lets whoever settles an unknown outcome find it.
+        result = (await client.callTool({ name: tool, arguments: args, _meta: { "awl/ref": e.ref, "awl/order": orderId } })) as CallToolResult;
       } catch (err) {
-        result = { isError: true, content: [text(`call failed: ${(err as Error).message}`)] };
+        // An error response is an answer: the tool refused the call. Anything else may have reached it.
+        const answered = err instanceof McpError && err.code !== ErrorCode.ConnectionClosed && err.code !== ErrorCode.RequestTimeout;
+        if (answered) result = { isError: true, content: [text(`call failed: ${err.message}`)] };
+        else {
+          const message = `no answer from the tool, so it may have run: ${(err as Error).message}`;
+          await log({ ...base, outcome: "unknown", ms: Date.now() - started, message, ...filled });
+          out.push({ ref: e.ref, tool: e.tool, outcome: "unknown", message });
+          continue;
+        }
       }
       const outcome = result.isError ? "error" : "ok";
-      const filled = canonical(args) !== canonical(e.arguments);
-      await log({ ...base, outcome, ms: Date.now() - started, result, ...(filled ? { arguments: args } : {}) });
+      await log({ ...base, outcome, ms: Date.now() - started, result, ...filled });
       if (outcome === "ok") results.set(e.ref, result);
       out.push({ ref: e.ref, tool: e.tool, outcome, result });
     }

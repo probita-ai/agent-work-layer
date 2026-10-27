@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.8.1 — 2026-10-26
+
+`agent-work-layer-mcp` alone (`agent-work-layer` stays at 0.8.0).
+
+### Fixed
+
+- Staged effects whose outcome can't be known are no longer recorded as failed. When `--commit` (`gateway.commit()`) sends an effect and gets no answer, because the connection dropped or timed out, or because an earlier commit died during the call, the effect's outcome is now `unknown`, with the reason. It may have happened, so it is still never run again. An effect is `error` only when the tool answered with an error. A later effect that refers to an unknown one is skipped, as before.
+- Each effect call now carries the effect's ref and the order id in `_meta["awl/ref"]` and `_meta["awl/order"]`, so the receiving service can drop a call it has already acted on, and an unknown outcome can be checked against its records. SPEC.md §9.1 rule 10 says both.
+- TypeScript: `Committed.outcome` and `CallRecord.outcome` add `"unknown"`, so an exhaustive `switch` over them may need a new case.
+- Tests for each place a commit can stop: before the call is sent, after the receiver acts but before the answer arrives (with the gateway killed, and with the answer lost), and after the result is logged. A test receiver counts deliveries independently of the gateway's log.
+
 ## 0.8.0 — 2026-10-26
 
 Both packages: `agent-work-layer` 0.8.0 and `agent-work-layer-mcp` 0.8.0. Spec v0.4; document formats are unchanged, but new documents are marked with the lowest version they need.

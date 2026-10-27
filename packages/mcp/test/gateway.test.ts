@@ -4,6 +4,7 @@ import { appendFileSync, existsSync, readFileSync, rmSync, writeFileSync } from 
 import { join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
 import { AwlError, WorkDesk } from "agent-work-layer";
 import type { WorkOrderInput, WorkReportInput } from "agent-work-layer";
 import { createGateway, USAGE_TOOL } from "../src/index.ts";
@@ -463,21 +464,42 @@ describe("MCP gateway with staged tools", () => {
     assert.deepEqual((await s.gateway.commit()).map((c) => c.outcome), ["ok"]);
   });
 
-  test("an effect a crashed commit started is settled as an error, never run again", async () => {
+  test("a call that gets no answer is unknown; an error response is an error", async () => {
+    const s = await setup({ ...STAGED, staged: ["gmail/*"] });
+    await s.call("gmail__send", { q: "lost" });
+    await s.call("gmail__draft", { q: "refused" });
+    await report(s);
+    await s.desk.review(s.id, MANAGER, "approve");
+    const sent: unknown[] = [];
+    s.upstreams.gmail.callTool = (async (params: { name: string; _meta?: unknown }) => {
+      sent.push(params._meta);
+      if (params.name === "send") throw new McpError(ErrorCode.ConnectionClosed, "Connection closed");
+      throw new McpError(ErrorCode.InvalidParams, "no such draft");
+    }) as never;
+
+    const committed = await s.gateway.commit();
+    assert.deepEqual(committed.map((c) => [c.ref, c.outcome]), [["gmail/send#1", "unknown"], ["gmail/draft#2", "error"]]);
+    assert.match(committed[0].message!, /no answer from the tool, so it may have run/);
+    assert.deepEqual(sent, [{ "awl/ref": "gmail/send#1", "awl/order": s.id }, { "awl/ref": "gmail/draft#2", "awl/order": s.id }]);
+    assert.deepEqual((await s.gateway.commit()).map((c) => c.outcome), ["unknown", "error"]);
+    assert.equal(sent.length, 2);
+  });
+
+  test("an effect a crashed commit started is settled as unknown, never run again", async () => {
     const logFile = join(tempDir(), "calls", "order.jsonl");
     const s = await setup(STAGED, { logFile });
     await s.call("gmail__send", { q: "first" });
     await s.call("gmail__send", { q: "second" });
     await report(s);
     await s.desk.review(s.id, MANAGER, "approve");
-    // As if a commit died during the call to gmail/send#1: its "running" line was written, nothing after it.
+    // As if a commit died right after logging gmail/send#1 as running, before or after sending it.
     appendFileSync(logFile, JSON.stringify({ ref: "gmail/send#1", tool: "gmail/send", order_id: s.id, at: "2026-01-01T10:00:00Z", outcome: "running", commit: true }) + "\n");
 
     const committed = await s.gateway.commit();
-    assert.deepEqual(committed.map((c) => [c.ref, c.outcome]), [["gmail/send#1", "error"], ["gmail/send#2", "ok"]]);
+    assert.deepEqual(committed.map((c) => [c.ref, c.outcome]), [["gmail/send#1", "unknown"], ["gmail/send#2", "ok"]]);
     assert.match(committed[0].message!, /may have run/);
     assert.deepEqual(s.arrived, ["gmail/send"]);
-    assert.deepEqual((await s.gateway.commit()).map((c) => c.outcome), ["error", "ok"]);
+    assert.deepEqual((await s.gateway.commit()).map((c) => c.outcome), ["unknown", "ok"]);
     assert.equal(s.arrived.length, 1);
   });
 

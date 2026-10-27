@@ -14,6 +14,8 @@ jobs:
   npm:
     if: startsWith(github.event.release.tag_name, 'v')
     runs-on: ubuntu-latest
+    outputs:
+      mcp: ${{ steps.versions.outputs.mcp }}
     # npm trusted publishing: npmjs.com trusts this repo and workflow for both packages. No token.
     permissions:
       contents: read
@@ -28,6 +30,9 @@ jobs:
       - run: npm run check
       # The core first: agent-work-layer-mcp depends on it. A patch release may bump only one
       # package, so a version that is already on npm is skipped instead of failing the release.
+      - name: Versions
+        id: versions
+        run: echo "mcp=$(node -p "require('./packages/mcp/package.json').version")" >> "$GITHUB_OUTPUT"
       - name: Publish the packages whose version is not on npm yet
         run: |
           for pkg in core:agent-work-layer mcp:agent-work-layer-mcp; do
@@ -40,6 +45,13 @@ jobs:
               npm publish --workspace "$name" --provenance --access public --loglevel verbose
             fi
           done
+
+  # Starts what was just published, through npx and installed offline, on every supported Node.
+  verify-npm:
+    needs: npm
+    uses: ./.github/workflows/mcp-install.yml
+    with:
+      version: ${{ needs.npm.outputs.mcp }}
 
   pypi:
     if: startsWith(github.event.release.tag_name, 'python-v')

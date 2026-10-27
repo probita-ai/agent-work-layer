@@ -2,10 +2,12 @@ import { describe, test, after } from "node:test";
 import assert from "node:assert/strict";
 import { appendFileSync, existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { spawn, spawnSync } from "node:child_process";
+import { hostname } from "node:os";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
-import { AwlError, WorkDesk } from "agent-work-layer";
+import { AwlError, WorkDesk, effectOutcomes } from "agent-work-layer";
 import type { WorkOrderInput, WorkReportInput } from "agent-work-layer";
 import { createGateway, USAGE_TOOL } from "../src/index.ts";
 import type { GatewayOptions } from "../src/index.ts";
@@ -517,6 +519,91 @@ describe("MCP gateway with staged tools", () => {
     rmSync(`${logFile}.commit-lock`);
     assert.deepEqual((await other.commit()).map((c) => c.outcome), ["ok"]);
     assert.equal(existsSync(`${logFile}.commit-lock`), false);
+  });
+
+  test("an unknown effect is settled by the worker and retried only when the manager allows it (#45)", async () => {
+    const logFile = join(tempDir(), "calls", "order.jsonl");
+    const s = await setup({ ...STAGED, staged: ["gmail/*"] }, { logFile });
+    await s.call("gmail__send", { q: "hello" });
+    await s.call("gmail__draft", { q: { $ref: "gmail/send#1", pointer: "/content/0/text" } } as never);
+    await report(s);
+    await s.desk.review(s.id, MANAGER, "approve");
+    const gmail = s.upstreams.gmail;
+    const real = gmail.callTool.bind(gmail);
+    const metas: unknown[] = [];
+    let connected = false;
+    gmail.callTool = (async (params: { name: string; _meta?: unknown }, ...rest: never[]) => {
+      metas.push(params._meta);
+      if (!connected) throw new McpError(ErrorCode.ConnectionClosed, "Connection closed");
+      return real(params as never, ...rest);
+    }) as never;
+
+    // The send gets no answer, so the draft that uses its result is skipped. The desk hears of both.
+    assert.deepEqual((await s.gateway.commit()).map((c) => c.outcome), ["unknown", "skipped"]);
+    const known = async () => Object.fromEntries([...effectOutcomes(await s.desk.get(s.id))].map(([k, v]) => [k, v.outcome]));
+    assert.deepEqual(await known(), { "gmail/send#1": "unknown", "gmail/draft#2": "skipped" });
+
+    // Unknown can't be retried until someone finds out what happened.
+    await rejectsCode(s.desk.allowRetry(s.id, MANAGER, ["gmail/send#1"]), "INVALID_TRANSITION");
+    await rejectsCode(s.gateway.settle("gmail/draft#2", "not_run", { note: "x" }), "INVALID_TRANSITION");
+    await rejectsCode(s.desk.settle(s.id, WORKER, "gmail/send#1", "not_run", " "), "BAD_REQUEST");
+    const settled = await s.gateway.settle("gmail/send#1", "not_run", { note: "the mail server has no message with awl/ref gmail/send#1" });
+    assert.deepEqual([settled.outcome, settled.message], ["not_run", "the mail server has no message with awl/ref gmail/send#1"]);
+    await rejectsCode(s.gateway.settle("gmail/send#1", "ok", { note: "changed my mind" }), "INVALID_TRANSITION");
+
+    // Settling runs nothing; nor does retry() before the manager allows it, and only the manager can.
+    connected = true;
+    assert.deepEqual(await s.gateway.retry(), []);
+    await rejectsCode(s.desk.allowRetry(s.id, WORKER, ["gmail/send#1"]), "FORBIDDEN");
+    await s.desk.allowRetry(s.id, MANAGER, ["gmail/draft#2", "gmail/send#1"], "nothing was sent; send it");
+    assert.deepEqual((await s.desk.get(s.id)).events.at(-1)!.effects, ["gmail/send#1", "gmail/draft#2"]);
+
+    const retried = await s.gateway.retry();
+    assert.deepEqual(retried.map((c) => [c.ref, c.outcome, c.retry]), [["gmail/send#1", "ok", 1], ["gmail/draft#2", "ok", 1]]);
+    assert.equal((retried[1].result!.content as { text: string }[])[0].text, "gmail/draft(gmail/send(hello))");
+    assert.deepEqual(metas.slice(-2), [
+      { "awl/ref": "gmail/send#1", "awl/order": s.id, "awl/try": 2 },
+      { "awl/ref": "gmail/draft#2", "awl/order": s.id, "awl/try": 2 },
+    ]);
+    assert.deepEqual(await known(), { "gmail/send#1": "ok", "gmail/draft#2": "ok" });
+
+    // Each allowance is one try, and a commit never runs them again.
+    assert.deepEqual(await s.gateway.retry(), []);
+    assert.deepEqual((await s.gateway.commit()).map((c) => [c.outcome, c.earlier]), [["ok", true], ["ok", true]]);
+    await rejectsCode(s.desk.allowRetry(s.id, MANAGER, ["gmail/send#1"]), "INVALID_TRANSITION");
+    assert.deepEqual(s.arrived, ["gmail/send", "gmail/draft"]);
+  });
+
+  test("a lock left by a process that died is taken over; one that may be in use is not (#44)", async () => {
+    const logFile = join(tempDir(), "calls", "order.jsonl");
+    const lock = `${logFile}.commit-lock`;
+    const s = await setup(STAGED, { logFile });
+    await s.call("gmail__send", { q: "once" });
+    await report(s);
+    await s.desk.review(s.id, MANAGER, "approve");
+    const holder = (pid: number, host = hostname()) => writeFileSync(lock, JSON.stringify({ pid, host, started_at: "2026-01-01T10:00:00Z" }));
+
+    const live = spawn(process.execPath, ["-e", "setTimeout(() => {}, 60000)"]);
+    try {
+      holder(live.pid!);
+      await assert.rejects(s.gateway.commit(), (e: AwlError) => e.code === "CONFLICT" && /process \d+ holds it/.test(e.message));
+      holder(live.pid!, "another-host");
+      await assert.rejects(s.gateway.commit(), (e: AwlError) => e.code === "CONFLICT" && /held on another-host/.test(e.message));
+      writeFileSync(lock, "");
+      await assert.rejects(s.gateway.commit(), (e: AwlError) => e.code === "CONFLICT" && /does not say which process/.test(e.message));
+      writeFileSync(`${lock}.takeover`, "");
+      holder(spawnSync(process.execPath, ["-e", ""]).pid!);
+      await assert.rejects(s.gateway.commit(), (e: AwlError) => e.code === "CONFLICT" && /taking over/.test(e.message));
+      rmSync(`${lock}.takeover`);
+    } finally {
+      live.kill();
+    }
+    assert.deepEqual(s.arrived, []);
+
+    // A process that has exited: its lock is stale.
+    assert.deepEqual((await s.gateway.commit()).map((c) => c.outcome), ["ok"]);
+    assert.deepEqual([existsSync(lock), existsSync(`${lock}.takeover`)], [false, false]);
+    assert.deepEqual(s.arrived, ["gmail/send"]);
   });
 
   test("an order without staged tools commits nothing, and a pass-mode gateway cannot commit", async () => {

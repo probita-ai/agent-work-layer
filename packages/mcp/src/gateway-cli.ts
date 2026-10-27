@@ -17,6 +17,8 @@ Usage:
   awl-desk gateway --order <id> --config <file> [--store <dir>] [--actor <agent-ref>] [--observe]
   awl-desk gateway --order <id> --config <file> --actor <agent-ref> --pass-keys <file> [--pass-file <file>] [--issuer <iss>]
   awl-desk gateway --order <id> --config <file> --commit [--store <dir>]
+  awl-desk gateway --order <id> --config <file> --settle <ref> --outcome ok|not_run --note <evidence> [--result <file>]
+  awl-desk gateway --order <id> --config <file> --retry [--store <dir>]
 
 The config file lists the real MCP servers, in the same shape as .mcp.json:
   { "mcpServers": {
@@ -33,6 +35,15 @@ placeholder "pending:<server>/<tool>#<n>" and lists the call in its report's eff
 --commit    Run the staged effects of the order's approved report (or those the approval
             chose), in order, and print the results as JSON. Runs nothing unless the order is
             approved and every effect matches a staged call in the log. No effect runs twice.
+            An effect sent with no answer back (dropped connection, timeout, a commit that
+            died) is "unknown": it may have happened, so it is never run again.
+--settle    Record what you found out about an unknown effect, e.g. from the receiver's
+            records (each call carried _meta["awl/ref"]): --outcome ok (it happened;
+            --result <file> holds its CallToolResult for later effects) or not_run, with
+            --note saying how you know. Records it on the desk too. Runs nothing.
+--retry     Run once more the approved effects the manager allowed a retry of on the desk
+            (allow_effect_retry) that have not happened: settled not_run, or skipped. Sends
+            the same _meta["awl/ref"] with _meta["awl/try"], so a receiver can drop a duplicate.
 --observe   Log only; refuse nothing. Calls the order would refuse are logged as violations.
             Use it when your own gateway or policy engine already enforces access.
 
@@ -68,6 +79,7 @@ function transportFor(name: string, config: ServerConfig) {
 export async function runGateway(args: string[]): Promise<void> {
   let values: {
     order?: string; config?: string; store?: string; actor?: string; observe?: boolean; commit?: boolean; help?: boolean;
+    settle?: string; outcome?: string; note?: string; result?: string; retry?: boolean;
     "pass-keys"?: string; "pass-file"?: string; issuer?: string;
   };
   try {
@@ -76,11 +88,15 @@ export async function runGateway(args: string[]): Promise<void> {
       options: {
         order: { type: "string" }, config: { type: "string" }, store: { type: "string" }, actor: { type: "string" }, observe: { type: "boolean" }, commit: { type: "boolean" },
         "pass-keys": { type: "string" }, "pass-file": { type: "string" }, issuer: { type: "string" }, help: { type: "boolean", short: "h" },
+        settle: { type: "string" }, outcome: { type: "string" }, note: { type: "string" }, result: { type: "string" }, retry: { type: "boolean" },
       },
     }));
     if (!values.help && (!values.order || !values.config)) throw new Error("--order and --config are required");
     if (!values.help && values["pass-keys"] && !(values.actor ?? process.env.AWL_ACTOR)) throw new Error("--pass-keys needs --actor (or AWL_ACTOR)");
-    if (!values.help && values.commit && values["pass-keys"]) throw new Error("--commit reads the order from the store, so it does not take --pass-keys");
+    const after = [values.commit && "--commit", values.settle !== undefined && "--settle", values.retry && "--retry"].filter(Boolean);
+    if (!values.help && after.length > 1) throw new Error(`use one of ${after.join(", ")} at a time`);
+    if (!values.help && after.length && values["pass-keys"]) throw new Error(`${after[0]} reads the order from the store, so it does not take --pass-keys`);
+    if (!values.help && values.settle !== undefined && (!values.outcome || !values.note)) throw new Error("--settle needs --outcome ok|not_run and --note");
   } catch (e) {
     console.error(`awl-desk gateway: ${(e as Error).message}\n\n${GATEWAY_HELP}`);
     process.exit(2);
@@ -112,9 +128,16 @@ export async function runGateway(args: string[]): Promise<void> {
     logFile: join(storeDir, "calls", `${values.order}.jsonl`),
     enforce: !values.observe,
   };
-  if (values.commit) {
+  if (values.commit || values.settle !== undefined || values.retry) {
     try {
-      console.log(JSON.stringify(await (await createGateway(options)).commit(), null, 2));
+      const gateway = await createGateway(options);
+      const outcome = values.outcome === "not-run" ? "not_run" : values.outcome;
+      const result = values.result ? JSON.parse(await readFile(values.result, "utf8")) : undefined;
+      const done =
+        values.commit ? await gateway.commit()
+        : values.retry ? await gateway.retry()
+        : await gateway.settle(values.settle!, outcome as "ok" | "not_run", { note: values.note!, result });
+      console.log(JSON.stringify(done, null, 2));
     } catch (e) {
       console.error(`awl-desk gateway: ${(e as Error).message}`);
       process.exitCode = 1;

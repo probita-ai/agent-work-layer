@@ -162,19 +162,39 @@ export type Action =
   | "cancel"
   | "expire";
 
+/** What became of an approved effect (§6.4). */
+export interface EffectOutcome {
+  ref: string;
+  /**
+   * As the gateway ran it: `ok`, `error` (the tool answered with an error), `skipped` (not run: an effect
+   * it uses did not succeed), `unknown` (sent, but no answer). Settled by the worker: `ok` or `not_run`.
+   */
+  outcome: "ok" | "error" | "skipped" | "unknown" | "not_run";
+  /** Why: the gateway's reason, or the worker's evidence when settling. */
+  note?: string;
+}
+
 export interface WorkEvent {
   seq: number;
   at: string;
   actor: AgentRef;
-  /** A lifecycle action, `create`, or `progress`, which changes no state (§6.2). */
-  action: Action | "create" | "progress";
+  /**
+   * A lifecycle action, `create`, or one that changes no state: `progress` (§6.2), and on an approved
+   * order `commit`, `settle` and `allow_retry` (§6.4).
+   */
+  action: Action | "create" | "progress" | "commit" | "settle" | "allow_retry";
   from: State | null;
   to: State;
   note?: string;
   /** `progress` only: how far along the work is, 0–100. */
   percent?: number;
-  /** `approve` only: the refs of the effects approved to run, when not all of them (§4.6). */
+  /**
+   * `approve`: the refs of the effects approved to run, when not all of them (§4.6).
+   * `allow_retry`: the refs the worker's gateway may run once more (§6.4).
+   */
   effects?: string[];
+  /** `commit` and `settle`: what became of each effect (§6.4). */
+  outcomes?: EffectOutcome[];
 }
 
 /** A finding from a check in SPEC.md §7–§8. `limit` findings are recorded; `invalid` ones reject. */

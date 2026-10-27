@@ -2,13 +2,14 @@
 // MCP servers and enforces the order's `tools` and `budget` at every tool call. Calls to the
 // order's `staged` tools are held back and run only once the report is approved (§4.6).
 import { appendFile, mkdir, open, readFile, rm } from "node:fs/promises";
+import { hostname } from "node:os";
 import { dirname } from "node:path";
 import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { CallToolRequestSchema, ErrorCode, ListToolsRequestSchema, McpError } from "@modelcontextprotocol/sdk/types.js";
 import type { CallToolResult, Tool } from "@modelcontextprotocol/sdk/types.js";
-import { AwlError, PassError, decodePass, effectReferences, toolAllowed, verifyPass } from "agent-work-layer";
-import type { Amounts, Effect, OrderRecord, PassKeys, WorkDesk } from "agent-work-layer";
+import { AwlError, PassError, approvedEffects, decodePass, effectOutcomes, effectReferences, toolAllowed, verifyPass } from "agent-work-layer";
+import type { Amounts, Effect, EffectOutcome, OrderRecord, PassKeys, WorkDesk } from "agent-work-layer";
 import { VERSION } from "./version.ts";
 
 export interface GatewayOptions {
@@ -68,12 +69,17 @@ export interface CallRecord {
   /**
    * `running`: a commit is about to call the tool; a final line follows unless the process died.
    * `unknown`: a commit sent the call but got no answer, so the effect may or may not have happened.
+   * `not_run`: the worker settled an unknown effect as never having happened (with `settled`).
    */
-  outcome: "ok" | "error" | "refused" | "staged" | "skipped" | "running" | "unknown";
+  outcome: "ok" | "error" | "refused" | "staged" | "skipped" | "running" | "unknown" | "not_run";
   /** Staged calls: the arguments to run them with once approved. Commits: the arguments run, when references were filled in. */
   arguments?: Record<string, unknown>;
   /** Set on the result of running a staged call after approval. */
   commit?: true;
+  /** Set on a commit line the worker recorded, settling an unknown outcome; `message` holds the evidence. */
+  settled?: true;
+  /** Set on a commit line for a retry the manager allowed: 1 for the first retry. */
+  retry?: number;
   /** Commits: the tool's result, which later effects may refer to. */
   result?: CallToolResult;
   ms?: number;
@@ -105,13 +111,15 @@ export interface Committed {
    * failed, or an earlier commit died during it), so it may have happened. It is never run again; check
    * with the receiver, which got the effect's ref in `_meta["awl/ref"]`.
    */
-  outcome: "ok" | "error" | "skipped" | "unknown";
+  outcome: "ok" | "error" | "skipped" | "unknown" | "not_run";
   /** The tool's result. Absent when an earlier commit already ran this effect, or when it was skipped. */
   result?: CallToolResult;
-  /** Why it was skipped, or why its outcome is unknown. */
+  /** Why it was skipped, why its outcome is unknown, or the evidence it was settled with. */
   message?: string;
   /** An earlier commit ran it; it was not run again. */
   earlier?: true;
+  /** A retry the manager allowed: 1 for the first. */
+  retry?: number;
 }
 
 export interface Gateway {
@@ -125,6 +133,18 @@ export interface Gateway {
    * reference cannot be filled in is skipped. Effects an earlier commit ran or skipped are not run again.
    */
   commit(): Promise<Committed[]>;
+  /**
+   * Records what the worker found out about an effect whose outcome is `unknown`: it happened (`ok`,
+   * optionally with the result later effects can refer to) or it did not (`not_run`), with the evidence
+   * in `note`. Logs it and records it on the desk (§6.4). Never runs anything.
+   */
+  settle(ref: string, outcome: "ok" | "not_run", options: { note: string; result?: CallToolResult }): Promise<Committed>;
+  /**
+   * Runs once more each approved effect the manager allowed a retry of (`allowRetry` on the desk) that
+   * has not happened: settled `not_run`, or `skipped`. Rechecks the approval and the staged call first,
+   * and sends the same `_meta["awl/ref"]`, with `_meta["awl/try"]`, so a receiver can still drop a duplicate.
+   */
+  retry(): Promise<Committed[]>;
 }
 
 export const USAGE_TOOL = "awl_usage";
@@ -208,6 +228,79 @@ function fillReferences(args: Record<string, unknown>, results: ReadonlyMap<stri
 function workingSeconds(record: OrderRecord, now: Date): number | undefined {
   const start = record.events.find((e) => e.action === "start");
   return start ? Math.max(0, (now.getTime() - Date.parse(start.at)) / 1000) : undefined;
+}
+
+/** Who holds a commit lock: written into the lock file, so a later run can tell whether that process is still alive. */
+interface LockHolder {
+  pid: number;
+  host: string;
+  started_at: string;
+}
+
+async function createLock(lock: string): Promise<() => Promise<void>> {
+  const handle = await open(lock, "wx");
+  try {
+    await handle.writeFile(JSON.stringify({ pid: process.pid, host: hostname(), started_at: new Date().toISOString() } satisfies LockHolder));
+  } finally {
+    await handle.close();
+  }
+  return () => rm(lock, { force: true });
+}
+
+async function readHolder(lock: string): Promise<LockHolder | undefined> {
+  try {
+    const holder = JSON.parse(await readFile(lock, "utf8"));
+    return Number.isInteger(holder?.pid) && typeof holder.host === "string" ? holder : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Whether a process with this id exists on this machine. One we may not signal still exists. */
+function alive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (e) {
+    return (e as NodeJS.ErrnoException).code === "EPERM";
+  }
+}
+
+/**
+ * Takes the commit lock for an order, and returns how to release it. A lock left by a process that
+ * died on this machine is taken over; one held by a live process, by another machine, or written by
+ * an older gateway that did not record its holder, is refused, since it may still be in use.
+ */
+async function takeLock(lock: string, orderId: string): Promise<() => Promise<void>> {
+  await mkdir(dirname(lock), { recursive: true });
+  const busy = (why: string) => new AwlError("CONFLICT", `another commit for order "${orderId}" may be running (${why}); if none is, check the log and remove ${lock}`);
+  try {
+    return await createLock(lock);
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code !== "EEXIST") throw e;
+  }
+  const holder = await readHolder(lock);
+  if (!holder) throw busy("its lock does not say which process holds it");
+  if (holder.host !== hostname()) throw busy(`held on ${holder.host}`);
+  if (alive(holder.pid)) throw busy(`process ${holder.pid} holds it`);
+  // The holder died. Only one process takes over: the first to create the takeover file.
+  const takeover = `${lock}.takeover`;
+  const handle = await open(takeover, "wx").catch((e: NodeJS.ErrnoException) => {
+    if (e.code === "EEXIST") throw busy(`another process is taking over the lock; if none is, remove ${takeover} too`);
+    throw e;
+  });
+  try {
+    const again = await readHolder(lock);
+    if (!again || again.pid !== holder.pid || again.started_at !== holder.started_at) throw busy("another process took it over");
+    await rm(lock, { force: true });
+    return await createLock(lock).catch((e: NodeJS.ErrnoException) => {
+      if (e.code === "EEXIST") throw busy("another process took it over");
+      throw e;
+    });
+  } finally {
+    await handle.close();
+    await rm(takeover, { force: true });
+  }
 }
 
 async function loadLog(file: string): Promise<CallRecord[]> {
@@ -370,15 +463,16 @@ export async function createGateway(options: GatewayOptions): Promise<Gateway> {
 
   let committing: Promise<unknown> = Promise.resolve();
 
-  async function runCommit(): Promise<Committed[]> {
-    if (!desk || passKeys) throw new AwlError("BAD_REQUEST", "committing staged effects needs the desk, to see that the report was approved");
+  /** The approved effects to work on, checked against the log, and what the log says of each so far. */
+  async function approvedRun(what: string) {
+    if (!desk || passKeys) throw new AwlError("BAD_REQUEST", `${what} staged effects needs the desk, to see that the report was approved`);
     const record = await desk.get(orderId);
     if (record.state !== "approved") {
       throw new AwlError("INVALID_TRANSITION", `order "${orderId}" is ${record.state}; staged effects run only once its report is approved`);
     }
     // The approval may have chosen some of the report's effects (§4.6).
-    const approved = [...record.events].reverse().find((e) => e.action === "approve")?.effects;
-    const effects = (record.reports.at(-1)?.effects ?? []).filter((e) => !approved || approved.includes(e.ref));
+    const chosen = new Set(approvedEffects(record));
+    const effects = (record.reports.at(-1)?.effects ?? []).filter((e) => chosen.has(e.ref));
     const dropped = reworkedThrough(record);
     // The file, not memory, so effects another process committed (e.g. `--commit`) are not run again.
     await logging;
@@ -391,89 +485,159 @@ export async function createGateway(options: GatewayOptions): Promise<Gateway> {
         throw new AwlError("CONFLICT", `effect "${e.ref}" does not match a staged call in the gateway's log; nothing was run`);
       }
     }
-
-    const earlier = new Map(logged.filter((c) => c.commit).map((c) => [c.ref, c]));
+    /** The last commit line for each effect. */
+    const latest = new Map(logged.filter((c) => c.commit).map((c) => [c.ref!, c]));
     /** Results of effects that succeeded, for later effects that refer to them. */
     const results = new Map<string, CallToolResult>();
+    for (const [ref, c] of latest) if (c.outcome === "ok" && c.result) results.set(ref, c.result);
+    const base = (e: Effect) => {
+      const { attempt, jti } = staged.get(e.ref)!;
+      return { ref: e.ref, tool: e.tool, order_id: orderId, ...grant({ attempt, jti }), at: clock().toISOString(), commit: true as const };
+    };
+    return { record, effects, latest, results, base, logged };
+  }
+
+  /** Runs one effect and logs the outcome. `retry` numbers a retry the manager allowed (§6.4). */
+  async function runEffect(e: Effect, base: Omit<CallRecord, "outcome">, results: Map<string, CallToolResult>, retry?: number): Promise<Committed> {
+    const tag = retry ? { retry } : {};
+    let args: Record<string, unknown>;
+    try {
+      args = fillReferences(e.arguments, results);
+    } catch (err) {
+      const message = `skipped: ${(err as Error).message}`;
+      await log({ ...base, ...tag, outcome: "skipped", message });
+      return { ref: e.ref, tool: e.tool, outcome: "skipped", message };
+    }
+    const [serverName, tool] = e.tool.split("/");
+    const filled = canonical(args) !== canonical(e.arguments) ? { arguments: args } : {};
+    const client = upstreams[serverName];
+    if (!client) {
+      const message = `no upstream server "${serverName}"`;
+      await log({ ...base, ...tag, outcome: "error", message, ...filled });
+      return { ref: e.ref, tool: e.tool, outcome: "error", message };
+    }
+    // Logged before the call, so a crash during it is never mistaken for an effect that did not run.
+    await log({ ...base, ...tag, outcome: "running" });
+    const started = Date.now();
+    let result: CallToolResult;
+    try {
+      // The ref lets the receiver drop a duplicate, also of a retry, and lets whoever settles an unknown outcome find it.
+      const _meta = { "awl/ref": e.ref, "awl/order": orderId, ...(retry ? { "awl/try": retry + 1 } : {}) };
+      result = (await client.callTool({ name: tool, arguments: args, _meta })) as CallToolResult;
+    } catch (err) {
+      // An error response is an answer: the tool refused the call. Anything else may have reached it.
+      const answered = err instanceof McpError && err.code !== ErrorCode.ConnectionClosed && err.code !== ErrorCode.RequestTimeout;
+      if (answered) result = { isError: true, content: [text(`call failed: ${err.message}`)] };
+      else {
+        const message = `no answer from the tool, so it may have run: ${(err as Error).message}`;
+        await log({ ...base, ...tag, outcome: "unknown", ms: Date.now() - started, message, ...filled });
+        return { ref: e.ref, tool: e.tool, outcome: "unknown", message };
+      }
+    }
+    const outcome = result.isError ? "error" : "ok";
+    await log({ ...base, ...tag, outcome, ms: Date.now() - started, result, ...filled });
+    if (outcome === "ok") results.set(e.ref, result);
+    return { ref: e.ref, tool: e.tool, outcome, result };
+  }
+
+  /** Settles an effect that an earlier run died during: it may have run, so it is unknown, never run again. */
+  async function interrupted(e: Effect, base: Omit<CallRecord, "outcome">): Promise<Committed> {
+    const message = "an earlier commit was interrupted while running it; it may have run, so it is not run again";
+    await log({ ...base, outcome: "unknown", message });
+    return { ref: e.ref, tool: e.tool, outcome: "unknown", message, earlier: true };
+  }
+
+  /**
+   * Tells the desk what became of the approved effects (§6.4): every outcome the log has that the desk
+   * does not show yet, so a commit whose report to the desk failed is caught up by the next run.
+   */
+  async function reportToDesk() {
+    const fresh = await (logFile ? loadLog(logFile) : Promise.resolve(calls));
+    const latest = new Map(fresh.filter((c) => c.commit && c.outcome !== "running").map((c) => [c.ref!, c]));
+    for (let tries = 0; ; tries++) {
+      const record = await desk!.get(orderId);
+      const known = effectOutcomes(record);
+      const outcomes = approvedEffects(record).flatMap((ref) => {
+        const c = latest.get(ref);
+        if (!c || c.settled || (known.get(ref)?.outcome === c.outcome && known.get(ref)?.note === c.message)) return [];
+        return [{ ref, outcome: c.outcome as EffectOutcome["outcome"], ...(c.message ? { note: c.message } : {}) }];
+      });
+      if (!outcomes.length) return;
+      try {
+        await desk!.recordCommit(orderId, actor, outcomes);
+        return;
+      } catch (e) {
+        // The manager may have acted on the order at the same moment; read it again.
+        if (!(e instanceof AwlError && e.code === "CONFLICT") || tries >= 3) throw e;
+      }
+    }
+  }
+
+  async function runCommit(): Promise<Committed[]> {
+    const { effects, latest, results, base } = await approvedRun("committing");
     const out: Committed[] = [];
     for (const e of effects) {
-      const before = earlier.get(e.ref);
-      const { attempt, jti } = staged.get(e.ref)!;
-      const base = { ref: e.ref, tool: e.tool, order_id: orderId, ...grant({ attempt, jti }), at: clock().toISOString(), commit: true as const };
-      if (before?.outcome === "running") {
-        // An earlier commit died while calling the tool. It may have run, so it is settled as unknown, not retried.
-        const message = "an earlier commit was interrupted while running it; it may have run, so it is not run again";
-        await log({ ...base, outcome: "unknown", message });
-        out.push({ ref: e.ref, tool: e.tool, outcome: "unknown", message, earlier: true });
-        continue;
-      }
-      if (before) {
-        if (before.outcome === "ok" && before.result) results.set(e.ref, before.result);
+      const before = latest.get(e.ref);
+      if (before?.outcome === "running") out.push(await interrupted(e, base(e)));
+      else if (before) {
         out.push({ ref: e.ref, tool: e.tool, outcome: before.outcome as Committed["outcome"], ...(before.message ? { message: before.message } : {}), earlier: true });
-        continue;
-      }
-      let args: Record<string, unknown>;
-      try {
-        args = fillReferences(e.arguments, results);
-      } catch (err) {
-        const message = `skipped: ${(err as Error).message}`;
-        await log({ ...base, outcome: "skipped", message });
-        out.push({ ref: e.ref, tool: e.tool, outcome: "skipped", message });
-        continue;
-      }
-      const [serverName, tool] = e.tool.split("/");
-      const filled = canonical(args) !== canonical(e.arguments) ? { arguments: args } : {};
-      const client = upstreams[serverName];
-      if (!client) {
-        const message = `no upstream server "${serverName}"`;
-        await log({ ...base, outcome: "error", message, ...filled });
-        out.push({ ref: e.ref, tool: e.tool, outcome: "error", message });
-        continue;
-      }
-      // Logged before the call, so a crash during it is never mistaken for an effect that did not run.
-      await log({ ...base, outcome: "running" });
-      const started = Date.now();
-      let result: CallToolResult;
-      try {
-        // The ref lets the receiver drop a duplicate, and lets whoever settles an unknown outcome find it.
-        result = (await client.callTool({ name: tool, arguments: args, _meta: { "awl/ref": e.ref, "awl/order": orderId } })) as CallToolResult;
-      } catch (err) {
-        // An error response is an answer: the tool refused the call. Anything else may have reached it.
-        const answered = err instanceof McpError && err.code !== ErrorCode.ConnectionClosed && err.code !== ErrorCode.RequestTimeout;
-        if (answered) result = { isError: true, content: [text(`call failed: ${err.message}`)] };
-        else {
-          const message = `no answer from the tool, so it may have run: ${(err as Error).message}`;
-          await log({ ...base, outcome: "unknown", ms: Date.now() - started, message, ...filled });
-          out.push({ ref: e.ref, tool: e.tool, outcome: "unknown", message });
-          continue;
-        }
-      }
-      const outcome = result.isError ? "error" : "ok";
-      await log({ ...base, outcome, ms: Date.now() - started, result, ...filled });
-      if (outcome === "ok") results.set(e.ref, result);
-      out.push({ ref: e.ref, tool: e.tool, outcome, result });
+      } else out.push(await runEffect(e, base(e), results));
     }
+    await reportToDesk();
+    return out;
+  }
+
+  async function runSettle(ref: string, outcome: "ok" | "not_run", note: string, result?: CallToolResult): Promise<Committed> {
+    if (outcome !== "ok" && outcome !== "not_run") throw new AwlError("BAD_REQUEST", `an effect is settled as ok or not_run, not "${outcome}"`);
+    if (result && outcome !== "ok") throw new AwlError("BAD_REQUEST", "only an effect settled as ok has a result");
+    const { effects, latest, base } = await approvedRun("settling");
+    const e = effects.find((x) => x.ref === ref);
+    if (!e) throw new AwlError("BAD_REQUEST", `"${ref}" is not an approved effect of order "${orderId}"`);
+    const now = latest.get(ref)?.outcome;
+    if (now === "running") throw new AwlError("INVALID_TRANSITION", `effect "${ref}" is still running, or a commit died during it; run --commit first`);
+    if (now !== "unknown") throw new AwlError("INVALID_TRANSITION", `effect "${ref}" is ${now ?? "not run yet"}; only an unknown outcome can be settled`);
+    // The desk may not have heard of the unknown outcome yet, if reporting it failed.
+    await reportToDesk();
+    await desk!.settle(orderId, actor, ref, outcome, note);
+    await log({ ...base(e), outcome, settled: true, message: note, ...(result ? { result } : {}) });
+    return { ref, tool: e.tool, outcome, message: note };
+  }
+
+  async function runRetry(): Promise<Committed[]> {
+    const { record, effects, latest, results, base, logged } = await approvedRun("retrying");
+    /** How many retries the manager allowed, and how many ran, for each effect. */
+    const allowed = new Map<string, number>();
+    for (const ev of record.events) if (ev.action === "allow_retry") for (const ref of ev.effects ?? []) allowed.set(ref, (allowed.get(ref) ?? 0) + 1);
+    const tried = new Map<string, number>();
+    for (const c of logged) if (c.commit && c.retry) tried.set(c.ref!, Math.max(tried.get(c.ref!) ?? 0, c.retry));
+    const out: Committed[] = [];
+    for (const e of effects) {
+      const before = latest.get(e.ref);
+      if (before?.outcome === "running") {
+        out.push(await interrupted(e, base(e)));
+        continue;
+      }
+      const done = tried.get(e.ref) ?? 0;
+      if (done >= (allowed.get(e.ref) ?? 0) || (before?.outcome !== "not_run" && before?.outcome !== "skipped")) continue;
+      out.push({ ...(await runEffect(e, base(e), results, done + 1)), retry: done + 1 });
+    }
+    await reportToDesk();
     return out;
   }
 
   /**
-   * One commit at a time, so an effect never runs twice: in this process by queueing, and across
-   * processes sharing the log by a lock file next to it.
+   * One run at a time, so an effect never runs twice: in this process by queueing, and across
+   * processes sharing the log by a lock file next to it, which a later run takes over when the
+   * process that holds it has died (§9.1 rule 10).
    */
-  function commit(): Promise<Committed[]> {
+  function exclusive<T>(run: () => Promise<T>): Promise<T> {
     const next = committing.then(async () => {
-      if (!logFile) return runCommit();
-      const lock = `${logFile}.commit-lock`;
-      await mkdir(dirname(lock), { recursive: true });
-      const handle = await open(lock, "wx").catch((e: NodeJS.ErrnoException) => {
-        if (e.code !== "EEXIST") throw e;
-        throw new AwlError("CONFLICT", `another commit for order "${orderId}" is running; if one crashed, check the log and remove ${lock}`);
-      });
+      if (!logFile) return run();
+      const release = await takeLock(`${logFile}.commit-lock`, orderId);
       try {
-        return await runCommit();
+        return await run();
       } finally {
-        await handle.close();
-        await rm(lock, { force: true });
+        await release();
       }
     });
     committing = next.catch(() => {});
@@ -591,7 +755,13 @@ export async function createGateway(options: GatewayOptions): Promise<Gateway> {
     };
   });
 
-  return { server, usage, commit };
+  return {
+    server,
+    usage,
+    commit: () => exclusive(runCommit),
+    settle: (ref, outcome, { note, result } = { note: "" }) => exclusive(() => runSettle(ref, outcome, note, result)),
+    retry: () => exclusive(runRetry),
+  };
 }
 
 /** The attempt and pass id a call ran under, for its call record. */

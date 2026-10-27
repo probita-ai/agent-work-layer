@@ -1,7 +1,7 @@
 import { describe, test, after } from "node:test";
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
-import { readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { FileStore, WorkDesk } from "agent-work-layer";
 import { fileURLToPath } from "node:url";
@@ -169,7 +169,7 @@ describe("--commit at the crash boundaries", () => {
       assert.equal(r.status, 0, r.stderr);
       return JSON.parse(r.stdout)[0] as { outcome: string; message?: string; earlier?: true };
     };
-    return { id, store, sent, gateway, setMode, commit };
+    return { id, store, sent, gateway, setMode, commit, desk };
   }
 
   test("the receiver acts on the call and the gateway dies before the answer: unknown, never sent again", async () => {
@@ -180,11 +180,8 @@ describe("--commit at the crash boundaries", () => {
     await new Promise((r) => child.once("exit", r));
     s.setMode("answer");
 
-    // The dead commit left its lock; whoever restarts it checks the log and removes it.
-    const locked = spawnSync(process.execPath, [...s.gateway, "--commit"], { encoding: "utf8" });
-    assert.equal(locked.status, 1);
-    assert.match(locked.stderr, /commit-lock/);
-    rmSync(join(s.store, "calls", `${s.id}.jsonl.commit-lock`), { force: true });
+    // The dead commit left its lock behind; the next run sees its process is gone and takes it over (#44).
+    assert.ok(existsSync(join(s.store, "calls", `${s.id}.jsonl.commit-lock`)));
 
     const settled = s.commit();
     assert.deepEqual([settled.outcome, settled.earlier], ["unknown", true]);
@@ -201,6 +198,29 @@ describe("--commit at the crash boundaries", () => {
     s.setMode("answer");
     assert.deepEqual([s.commit().outcome, s.commit().outcome], ["unknown", "unknown"]);
     assert.equal(deliveries(s.sent).length, 1);
+  });
+
+  test("--settle records what the receiver shows, and --retry runs only what the manager allowed", async () => {
+    const s = await approved("exit");
+    assert.equal(s.commit().outcome, "unknown");
+    s.setMode("answer");
+    const run = (...flags: string[]) => spawnSync(process.execPath, [...s.gateway, ...flags], { encoding: "utf8" });
+
+    assert.equal(run("--settle", "gmail/send#1", "--outcome", "not_run").status, 2);
+    const settled = run("--settle", "gmail/send#1", "--outcome", "not-run", "--note", "receiver log has no gmail/send#1");
+    assert.equal(settled.status, 0, settled.stderr);
+    assert.equal(JSON.parse(settled.stdout).outcome, "not_run");
+
+    assert.deepEqual(JSON.parse(run("--retry").stdout), []);
+    await s.desk.allowRetry(s.id, MANAGER, ["gmail/send#1"]);
+    const retried = run("--retry");
+    assert.equal(retried.status, 0, retried.stderr);
+    assert.deepEqual(JSON.parse(retried.stdout).map((c: { outcome: string; retry: number }) => [c.outcome, c.retry]), [["ok", 1]]);
+    assert.deepEqual(JSON.parse(run("--retry").stdout), []);
+
+    // The same ref both times, so a receiver that dedupes would have dropped the second.
+    assert.deepEqual(deliveries(s.sent).map((d) => [d.ref, d.try ?? 1]), [["gmail/send#1", 1], ["gmail/send#1", 2]]);
+    assert.equal(run("--commit", "--retry").status, 2);
   });
 
   test("a recorded result is not sent again when --commit repeats", async () => {

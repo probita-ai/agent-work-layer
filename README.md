@@ -190,7 +190,7 @@ npx -y agent-work-layer-mcp serve --keys keys.json        # { "keys": { "<key>":
 claude mcp add --transport http awl http://127.0.0.1:8787/mcp --header "Authorization: Bearer $AWL_KEY"
 ```
 
-Tools: `create_work_order`, `list_work_orders`, `get_work_order`, `accept_work_order`, `decline_work_order`, `start_work_order`, `report_progress`, `submit_work_report`, `answer_question`, `review_work_report`, `cancel_work_order`, `wait_for_update`, `get_track_record`, and `renew_work_pass` when the desk issues [Delegation Passes](#delegation-pass).
+Tools: `create_work_order`, `list_work_orders`, `get_work_order`, `accept_work_order`, `decline_work_order`, `start_work_order`, `report_progress`, `submit_work_report`, `answer_question`, `review_work_report`, `allow_effect_retry`, `cancel_work_order`, `wait_for_update`, `get_track_record`, and `renew_work_pass` when the desk issues [Delegation Passes](#delegation-pass).
 
 To enforce an order while the worker works, and to hold its [staged](#hold-writes-until-the-report-is-approved) writes until you approve, connect the worker to its real MCP servers through the gateway: `npx -y agent-work-layer-mcp gateway --order <id> --config upstream.json`. After approval, `--commit` runs the approved writes. See [the gateway docs](packages/mcp/README.md#gateway-enforce-an-order-while-the-worker-works).
 
@@ -241,7 +241,8 @@ While `working`, the worker can post progress notes. They are recorded as events
 | Action | Who |
 |---|---|
 | accept, decline, start, submit report, post progress | the worker (`order.to`) |
-| approve, rework, cancel | the manager (`order.from`) |
+| record or settle effect outcomes, after approval | the worker |
+| approve, rework, cancel, allow an effect retry | the manager (`order.from`) |
 | answer a blocked worker | the manager or `order.escalate_to` |
 | expire | the desk |
 
@@ -249,13 +250,14 @@ While `working`, the worker can post progress notes. They are recorded as events
 
 | Export | Purpose |
 |---|---|
-| `WorkDesk` | Runs the lifecycle: `create`, `accept`, `decline`, `start`, `progress`, `submitReport`, `answer`, `review`, `cancel`, `get`, `list`, `subOrders`, `held`, `trackRecord`, `waitForChange`, and `issuePass` when it issues passes |
+| `WorkDesk` | Runs the lifecycle: `create`, `accept`, `decline`, `start`, `progress`, `submitReport`, `answer`, `review`, `cancel`, `get`, `list`, `subOrders`, `held`, `trackRecord`, `waitForChange`, and `issuePass` when it issues passes. After approval: `recordCommit`, `settle` (worker) and `allowRetry` (manager) |
 | `MemoryStore`, `FileStore`, `SqliteStore`, `DeskStore` | Storage. Implement `DeskStore` (4 methods) to use a database |
 | `validateOrder`, `validateReport`, `validateChildOrder`, `validateChildBudgets`, `validateOwnCost`, `hasInvalid` | Spec checks, returning `Finding[]` |
 | `heldBySubOrders` | The budget an order's sub-orders hold, which it may not spend itself |
 | `isWorkOrder`, `isWorkReport` | Type guards |
 | `toolAllowed`, `patternCovered` | Tool pattern matching |
 | `effectReferences` | The references to earlier effects' results in an effect's arguments |
+| `approvedEffects`, `effectOutcomes` | The effects an approval lets run, and what is known of each from the order's `commit` and `settle` events |
 | `nextState`, `allowedActions`, `STATES`, `ROLE_FOR`, `isTerminal` | The state machine |
 | `AwlError`, `isAwlError` | Typed errors with `code` and `findings` |
 | `signPass`, `verifyPass`, `decodePass`, `PassError` | [Delegation Passes](#delegation-pass): sign, verify (including narrowing against a parent), read |

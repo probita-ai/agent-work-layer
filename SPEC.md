@@ -1,6 +1,6 @@
 # Agent Work Layer (AWL) — Specification v0.4 (draft)
 
-Status: draft · Date: 2026-10-24 · Changes from v0.3: staged tools, whose calls run only once the report is approved: `staged` in the Work Order, `effects` in the Work Report (§4.6), and how the gateway holds and runs them (§9.1); effects that use earlier effects' results, and approving only some effects (§4.6); progress events (§6.2); track records (§6.3); checks O5, R14, R15, R16 and C5.
+Status: draft · Date: 2026-10-24 · Changes from v0.3: staged tools, whose calls run only once the report is approved: `staged` in the Work Order, `effects` in the Work Report (§4.6), and how the gateway holds and runs them (§9.1); effects that use earlier effects' results, and approving only some effects (§4.6); progress events (§6.2); track records (§6.3); checks O5, R14, R15, R16 and C5. Since then (2026-10-26): unknown effect outcomes, and recording, settling and retrying effects after approval (§6.4, §9.1 rules 10–11).
 
 ## 1. Purpose
 
@@ -206,6 +206,8 @@ States: `offered`, `accepted`, `working`, `blocked`, `submitted` (active) and `a
 | any active  | cancel          | manager               | cancelled   |
 | any active  | expire          | desk                  | expired     |
 | working     | progress        | worker                | working (no change, §6.2) |
+| approved    | commit, settle  | worker                | approved (no change, §6.4) |
+| approved    | allow_retry     | manager               | approved (no change, §6.4) |
 
 Rules:
 
@@ -223,7 +225,7 @@ Rules:
 
 `seq` starts at 1 and increases by 1 per order. Consumers MAY use `seq` to wait for changes.
 
-Two optional fields carry extra detail: `percent` on a `progress` event (§6.2), and `effects` on an `approve` event, the refs of the effects approved to run when the manager chose some (§4.6). An `approve` event without `effects` approves all of them.
+Optional fields carry extra detail: `percent` on a `progress` event (§6.2); `effects` on an `approve` event, the refs of the effects approved to run when the manager chose some (§4.6), and on an `allow_retry` event, the refs allowed one more try (§6.4); and `outcomes` on `commit` and `settle` events, each `{ref, outcome, note?}` (§6.4). An `approve` event without `effects` approves all of them.
 
 ### 6.2 Progress
 
@@ -254,6 +256,21 @@ A desk MAY report a worker's **track record**: what happened to the orders it ho
 | `since`               | The `since` given, if any. |
 
 Units in `spent` and `budget` appear only when at least one order sets them, so the two may not cover the same units. A track record is the desk's own count of its own records. It is not signed, and it says nothing about work done on other desks.
+
+### 6.4 Effect outcomes
+
+Once an order is `approved`, its staged effects run at the worker's gateway (§9.1 rule 10), not on the desk. Three events keep the order's record in step with what happened. None changes the state: each has `from` and `to` both `approved`, and takes the next `seq`. Each names only effects the approval lets run; a desk MUST refuse any other ref, and any of these events on an order that is not `approved`.
+
+- **commit** (worker): what became of effects when the gateway ran them, in `outcomes`. Each outcome is `ok`, `error` (the tool answered with an error), `skipped` (not run, because an effect it uses did not succeed), or `unknown` (the call was sent but no answer came back, so it may have happened). The gateway SHOULD record one after each run.
+- **settle** (worker): what the worker found out about an effect whose last outcome is `unknown`, for example from the receiver's records, which carry the effect's `ref` (§9.1 rule 10): `ok` (it happened) or `not_run` (it did not), with the evidence in `note`. A desk MUST refuse to settle an effect whose last outcome is not `unknown`, and a settlement without a `note`. Settling never runs anything.
+- **allow_retry** (manager): lets the gateway run once more each effect named in `effects` whose last outcome is `not_run` or `skipped`. A desk MUST refuse a retry of any other effect. Each event allows one more try.
+
+```json
+{ "seq": 9, "at": "2026-10-09T18:05:00Z", "actor": "agent:researcher", "action": "settle", "from": "approved", "to": "approved",
+  "outcomes": [{ "ref": "github/create_issue#3", "outcome": "not_run", "note": "No issue with awl/ref github/create_issue#3 in the repository" }] }
+```
+
+The last `commit` or `settle` outcome for a ref is what is known of that effect. Recording what happened and allowing a retry are separate on purpose: an absent record at the receiver may be incomplete evidence that an effect did not run, so the worker who looked records the evidence, and the manager who approved the effect decides whether it may run again.
 
 ## 7. Checks
 
@@ -333,9 +350,10 @@ A gateway is an MCP server that sits between one worker and its real MCP servers
 7. The report's `tools_used`, its `cost.tool_calls` and `cost.seconds`, and its `effects` SHOULD be taken from the gateway's log.
 8. Each logged call SHOULD record the authority it ran under: the order id, the report attempt in progress (`reports` + 1) and, when there is one, the `jti` of the Delegation Pass (§10.2). A resumed or reissued job can then tell which grant applied to every earlier call.
 9. It MUST NOT forward a call to a tool the order stages (§4.6). It counts and names the call as rules 4 and 5 say, logs it with its arguments, and returns `pending:<server>/<tool>#<n>` as the result. This applies in observe mode too. It MUST refuse a call to a tool the order does not stage whose arguments contain a reference (§4.6) whose `$ref` names a call to a staged tool (`<server>/<tool>#<n>` with the tool staged), since that result exists only after approval.
-10. It runs staged effects only once the order is `approved`, and only those in the approved report's `effects` that the approval chose (all of them when the `approve` event has no `effects`). Before it runs any, it MUST check that each effect to run matches a staged call in its log with the same `ref`, `tool` and arguments (compared as JSON with object keys in a fixed order), made after the order's last rework (by rule 8's attempt). If any does not match, it runs none. It runs each effect at most once, in the order listed, filling in references to earlier effects' results (§4.6), and logs each outcome under the effect's `ref`: the result when it ran, or why it was skipped. It SHOULD log each result, so that references can still be filled in after a restart. To keep "at most once" across crashes, it SHOULD log that it is about to run an effect before calling the tool, and record an effect started but never finished, or one whose call got no answer (the connection dropped or timed out), as **unknown** rather than failed: it may have happened, so it is never run again. A tool that answered with an error has failed. The gateway SHOULD send each effect's `ref` and order id with the call (over MCP, in `_meta["awl/ref"]` and `_meta["awl/order"]`), so the receiver can drop a call it has already acted on, and an unknown outcome can be settled from the receiver's own records. It SHOULD also keep two commits for the same order from running at once. Running an effect does not count against `budget.tool_calls` again: it was counted when it was staged.
+10. It runs staged effects only once the order is `approved`, and only those in the approved report's `effects` that the approval chose (all of them when the `approve` event has no `effects`). Before it runs any, it MUST check that each effect to run matches a staged call in its log with the same `ref`, `tool` and arguments (compared as JSON with object keys in a fixed order), made after the order's last rework (by rule 8's attempt). If any does not match, it runs none. It runs each effect at most once, in the order listed, filling in references to earlier effects' results (§4.6), and logs each outcome under the effect's `ref`: the result when it ran, or why it was skipped. It SHOULD log each result, so that references can still be filled in after a restart. To keep "at most once" across crashes, it SHOULD log that it is about to run an effect before calling the tool, and record an effect started but never finished, or one whose call got no answer (the connection dropped or timed out), as **unknown** rather than failed: it may have happened, so it is never run again. A tool that answered with an error has failed. The gateway SHOULD send each effect's `ref` and order id with the call (over MCP, in `_meta["awl/ref"]` and `_meta["awl/order"]`), so the receiver can drop a call it has already acted on, and an unknown outcome can be settled from the receiver's own records. It SHOULD also keep two commits for the same order from running at once, and SHOULD let a later commit take over from one whose process has died, rather than wait for a person; it MUST NOT take over from one that may still be running. It SHOULD record each run's outcomes on the desk as a `commit` event (§6.4). Running an effect does not count against `budget.tool_calls` again: it was counted when it was staged.
+11. It runs an effect again only when the manager has allowed a retry of it (§6.4), at most once per `allow_retry` event that names it, and only while its last outcome is `not_run` or `skipped`. Before it does, it MUST check rule 10's conditions again: the order is `approved`, the effect is one the approval lets run, and it matches a staged call in the log. A retry SHOULD send the same `ref` as the first try, with the try number (over MCP, `_meta["awl/try"]`, 2 for the first retry), so a receiver that already acted on it can drop it. It never retries an effect whose outcome is `unknown`; that is settled first.
 
-A gateway MAY work from **Delegation Passes** instead of the desk's order state (§10.2). It then requires a valid pass for its order and worker on every call, and enforces the pass's `awl_tools` and `awl_budget.tool_calls` in place of rules 1–3, and stages the pass's `awl_staged` tools. A pass does not say when the order was started, so `budget.seconds` is left to the report checks. A pass is not issued once the order has left `working`, so rule 10 needs the desk's order state.
+A gateway MAY work from **Delegation Passes** instead of the desk's order state (§10.2). It then requires a valid pass for its order and worker on every call, and enforces the pass's `awl_tools` and `awl_budget.tool_calls` in place of rules 1–3, and stages the pass's `awl_staged` tools. A pass does not say when the order was started, so `budget.seconds` is left to the report checks. A pass is not issued once the order has left `working`, so rules 10 and 11 need the desk's order state.
 
 A gateway MAY instead run in **observe** mode, for deployments whose own gateway or policy engine already controls access. It then applies rules 4–7 but not 1–3 or rule 9's refusal of references: it refuses nothing, and it SHOULD mark each logged call that those rules would have refused. Calls over budget or to tools the order does not allow still show up in the report, where checks R5 and R7 catch them.
 

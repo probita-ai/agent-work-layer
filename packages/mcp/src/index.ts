@@ -240,6 +240,24 @@ export function createDeskServer({ desk, actor: sessionActor, name = "awl-work-d
   );
 
   server.registerTool(
+    "allow_effect_retry",
+    {
+      // Each call allows one more try, so calling it twice is not the same as once.
+      annotations: { ...MOVE, idempotentHint: false },
+      description:
+        "Manager lets the worker's gateway run approved effects once more that did not happen: ones the worker settled as not_run " +
+        "after an unknown outcome, or ones skipped because an effect they use did not succeed. Each call allows one more try of each.",
+      inputSchema: {
+        id: idArg,
+        actor: actorArg,
+        effects: z.array(z.string()).min(1).describe("Refs of the approved effects to allow one more try of"),
+        reason: z.string().optional(),
+      },
+    },
+    async ({ id, actor, effects, reason }) => respond(async () => view(await desk.allowRetry(id, who(actor), effects, reason))),
+  );
+
+  server.registerTool(
     "cancel_work_order",
     { annotations: END, description: "Manager cancels an order that is not finished.", inputSchema: { id: idArg, actor: actorArg, reason: z.string().optional() } },
     async ({ id, actor, reason }) => respond(async () => view(await desk.cancel(id, who(actor), reason))),

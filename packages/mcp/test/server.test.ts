@@ -27,7 +27,7 @@ async function pair() {
 }
 
 describe("desk MCP server", () => {
-  test("exposes the thirteen desk tools", async () => {
+  test("exposes the fourteen desk tools", async () => {
     const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
     await createDeskServer({ desk: new WorkDesk() }).connect(serverSide);
     const client = new Client({ name: "t", version: "0" });
@@ -35,7 +35,7 @@ describe("desk MCP server", () => {
     clients.push(client);
     const names = (await client.listTools()).tools.map((t) => t.name).sort();
     assert.deepEqual(names, [
-      "accept_work_order", "answer_question", "cancel_work_order", "create_work_order", "decline_work_order",
+      "accept_work_order", "allow_effect_retry", "answer_question", "cancel_work_order", "create_work_order", "decline_work_order",
       "get_track_record", "get_work_order", "list_work_orders", "report_progress", "review_work_report", "start_work_order",
       "submit_work_report", "wait_for_update",
     ]);

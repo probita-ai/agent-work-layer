@@ -1,7 +1,7 @@
 import { describe, test } from "node:test";
 import assert from "node:assert/strict";
 import { webcrypto } from "node:crypto";
-import { ORDER_SPEC, REPORT_SPEC, decodePass, orderSpecFor, reportSpecFor, effectReferences, signPass, validateChildOrder, validateOrder, validateReport, verifyPass } from "../src/index.ts";
+import { ORDER_SPEC, REPORT_SPEC, approvedEffects, decodePass, effectOutcomes, orderSpecFor, reportSpecFor, effectReferences, signPass, validateChildOrder, validateOrder, validateReport, verifyPass } from "../src/index.ts";
 import type { PassJwk } from "../src/index.ts";
 import { HELPER, MANAGER, WORKER, newDesk, order, orderInput, rejectsWith, report, reportInput, rules, workingOrder } from "./helpers.ts";
 
@@ -151,5 +151,43 @@ describe("staged tools", () => {
     assert.deepEqual(none.events.at(-1)!.effects, []);
     const all = await desk.review(await submitted(), MANAGER, "approve");
     assert.equal("effects" in all.events.at(-1)!, false);
+  });
+
+  test("after approval: the worker records and settles outcomes, the manager allows retries (§6.4)", async () => {
+    const { desk } = newDesk();
+    const effects = [effect({ ref: "gmail/send#1" }), effect({ ref: "gmail/send#2" }), effect({ ref: "gmail/send#3" })];
+    const id = await workingOrder(desk, { tools: ["filings/*", "gmail/*"], staged: ["gmail/send"] });
+    await desk.submitReport(id, reportInput({ effects }), WORKER);
+    await rejectsWith(desk.recordCommit(id, WORKER, [{ ref: "gmail/send#1", outcome: "ok" }]), "INVALID_TRANSITION");
+    await desk.review(id, MANAGER, "approve", undefined, { effects: ["gmail/send#1", "gmail/send#2"] });
+
+    // Only the worker records what ran, only for approved effects, and never not_run.
+    await rejectsWith(desk.recordCommit(id, MANAGER, [{ ref: "gmail/send#1", outcome: "ok" }]), "FORBIDDEN");
+    await rejectsWith(desk.recordCommit(id, WORKER, [{ ref: "gmail/send#3", outcome: "ok" }]), "BAD_REQUEST");
+    await rejectsWith(desk.recordCommit(id, WORKER, [{ ref: "gmail/send#1", outcome: "not_run" }]), "BAD_REQUEST");
+    await rejectsWith(desk.recordCommit(id, WORKER, []), "BAD_REQUEST");
+    const ran = await desk.recordCommit(id, WORKER, [{ ref: "gmail/send#1", outcome: "unknown", note: "no answer" }, { ref: "gmail/send#2", outcome: "ok" }]);
+    assert.equal(ran.state, "approved");
+    assert.deepEqual(ran.events.at(-1)!.outcomes, [{ ref: "gmail/send#1", outcome: "unknown", note: "no answer" }, { ref: "gmail/send#2", outcome: "ok" }]);
+
+    // Only an unknown outcome is settled, by the worker, with evidence.
+    await rejectsWith(desk.settle(id, WORKER, "gmail/send#2", "not_run", "receiver has nothing"), "INVALID_TRANSITION");
+    await rejectsWith(desk.settle(id, MANAGER, "gmail/send#1", "not_run", "receiver has nothing"), "FORBIDDEN");
+    await rejectsWith(desk.settle(id, WORKER, "gmail/send#1", "unknown" as never, "x"), "BAD_REQUEST");
+    await rejectsWith(desk.settle(id, WORKER, "gmail/send#1", "not_run", ""), "BAD_REQUEST");
+    await rejectsWith(desk.allowRetry(id, MANAGER, ["gmail/send#1"]), "INVALID_TRANSITION");
+    await desk.settle(id, WORKER, "gmail/send#1", "not_run", "receiver has nothing for awl/ref gmail/send#1");
+
+    // Only the manager allows a retry, only of what never happened.
+    await rejectsWith(desk.allowRetry(id, WORKER, ["gmail/send#1"]), "FORBIDDEN");
+    await rejectsWith(desk.allowRetry(id, MANAGER, ["gmail/send#2"]), "INVALID_TRANSITION");
+    await rejectsWith(desk.allowRetry(id, MANAGER, ["gmail/send#1", "gmail/send#1"]), "BAD_REQUEST");
+    const allowed = await desk.allowRetry(id, MANAGER, ["gmail/send#1"], "nothing was sent");
+    assert.deepEqual([allowed.events.at(-1)!.action, allowed.events.at(-1)!.effects, allowed.state], ["allow_retry", ["gmail/send#1"], "approved"]);
+    assert.deepEqual(
+      [...effectOutcomes(allowed)].map(([ref, o]) => [ref, o.outcome]),
+      [["gmail/send#1", "not_run"], ["gmail/send#2", "ok"]],
+    );
+    assert.deepEqual(approvedEffects(allowed), ["gmail/send#1", "gmail/send#2"]);
   });
 });

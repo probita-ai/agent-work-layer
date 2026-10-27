@@ -9,12 +9,12 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
 
-export type Delivery = { tool: string; q?: string; ref?: unknown; order?: unknown };
+export type Delivery = { tool: string; q?: string; ref?: unknown; order?: unknown; try?: unknown };
 
 export function receiverServer(file: string, mode: string) {
   const server = new McpServer({ name: "gmail", version: "0" });
   server.registerTool("send", { description: "send on gmail", inputSchema: { q: z.string().optional() } }, async ({ q }, extra) => {
-    appendFileSync(file, JSON.stringify({ tool: "gmail/send", q, ref: extra._meta?.["awl/ref"], order: extra._meta?.["awl/order"] }) + "\n");
+    appendFileSync(file, JSON.stringify({ tool: "gmail/send", q, ref: extra._meta?.["awl/ref"], order: extra._meta?.["awl/order"], try: extra._meta?.["awl/try"] }) + "\n");
     if (mode === "hang") return new Promise<never>(() => {});
     if (mode === "exit") process.exit(0);
     return { content: [{ type: "text" as const, text: `sent(${q ?? ""})` }] };

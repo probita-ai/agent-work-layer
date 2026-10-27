@@ -24,7 +24,7 @@ describe("continues", () => {
 
     const second = (await desk.create(orderInput({ to: HELPER, continues: first, handoff }), MANAGER)).order;
     assert.equal(second.continues, first);
-    assert.equal(second.spec, ORDER_SPEC);
+    assert.equal(second.spec, "awl/work-order@0.3");
     await desk.decline(second.id, HELPER, "busy");
 
     // A different worker, budget and tools: no narrowing applies.

@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- New documents are marked with the lowest version that defines every field they use (#39), so readers from 0.6 and earlier (`agent-work-layer` 0.6.x, Python 0.3.0, older `awl validate`) keep accepting documents that don't use the newer fields. An order with `staged` is still `awl/work-order@0.4`, one with `continues` `@0.3`, one with `handoff` `@0.2`, any other `@0.1`; a report with `effects` is `awl/work-report@0.3`, one with `handoff` `@0.2`, any other `@0.1`. `WorkDesk.create`, `WorkDesk.submitReport`, `awl new` and the Python models' default `spec` all do this; a `spec` set explicitly on a Python model is kept. Readers are unchanged. SPEC.md §11 now says a writer SHOULD use the lowest such version and MUST NOT go lower. Orders with `staged` still need a 0.7 gateway.
+  - New `orderSpecFor` / `reportSpecFor` in `agent-work-layer` (and `agent-work-layer/validate`), `order_spec_for` / `report_spec_for` in Python. `ORDER_SPEC` and `REPORT_SPEC` remain the newest versions.
+
 ## 0.7.1 — 2026-10-25
 
 Both packages: `agent-work-layer` 0.7.1 and `agent-work-layer-mcp` 0.7.1. Documentation only; no code changes.

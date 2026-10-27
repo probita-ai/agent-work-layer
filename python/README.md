@@ -52,6 +52,7 @@ if has_invalid(findings):
 | `validate_child_budgets(child, parent, siblings)` | C4: a parent's sub-orders together stay within its budget. `siblings` are `{"order": ..., "state": ...}` |
 | `is_work_order(value)`, `is_work_report(value)` | Structure only (O1, R1) |
 | `tool_allowed(tool, patterns)`, `pattern_covered(child, parents)` | Tool pattern matching (`server/tool`, `server/*`, `*`) |
+| `order_spec_for(order)`, `report_spec_for(report)` | The lowest version that has every field a document uses; the models' default `spec` |
 | `effect_references(arguments)` | References to earlier effects' results in an effect's arguments, each `{"ref", "pointer", "path"}` |
 
 The JSON Schemas are available as `work_order_schema` and `work_report_schema`.

@@ -2,7 +2,7 @@
 import { readFileSync } from "node:fs";
 import { parseArgs } from "node:util";
 import { hasInvalid, validateChildOrder, validateOrder, validateReport, workOrderSchema, workReportSchema } from "./validate.ts";
-import { ORDER_SPEC, REPORT_SPEC } from "./types.ts";
+import { orderSpecFor, reportSpecFor } from "./types.ts";
 import type { Finding, WorkOrder, WorkReport } from "./types.ts";
 import { VERSION } from "./version.ts";
 
@@ -34,7 +34,7 @@ function newDocument(args: string[]): number {
   }
   const now = new Date();
   const document: WorkOrder | WorkReport = which === "order" ? {
-    spec: ORDER_SPEC,
+    spec: orderSpecFor({}),
     id: "wo_example",
     created_at: now.toISOString(),
     from: "agent:manager",
@@ -45,7 +45,7 @@ function newDocument(args: string[]): number {
     deadline: new Date(now.getTime() + 3_600_000).toISOString(),
     tools: [],
   } : {
-    spec: REPORT_SPEC,
+    spec: reportSpecFor({}),
     order_id: "wo_example",
     from: "agent:worker",
     status: "blocked",

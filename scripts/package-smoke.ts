@@ -64,14 +64,15 @@ script(
   "core.mjs",
   `
 import assert from "node:assert/strict";
-import { WorkDesk, validateOrder, VERSION, workOrderSchema, ORDER_SPEC } from "agent-work-layer";
+import { WorkDesk, validateOrder, VERSION, workOrderSchema, orderSpecFor } from "agent-work-layer";
 import * as validator from "agent-work-layer/validate";
 import schema from "agent-work-layer/schemas/work-order.schema.json" with { type: "json" };
 
 const desk = new WorkDesk();
 const rec = await desk.create({ to: "w", goal: "g", criteria: [{ id: "c1", text: "t" }], budget: { usd: 1 }, deadline: "2999-01-01T00:00:00Z", tools: [], handoff: { next_step: "n" } }, "m");
 assert.equal(rec.state, "offered");
-assert.equal(rec.order.spec, ORDER_SPEC);
+assert.equal(rec.order.spec, "awl/work-order@0.2");
+assert.equal(validator.orderSpecFor(rec.order), orderSpecFor(rec.order));
 assert.deepEqual(validateOrder(rec.order), []);
 assert.deepEqual(validator.validateOrder(rec.order), []);
 assert.equal(validator.WorkDesk, undefined);

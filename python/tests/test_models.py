@@ -5,12 +5,16 @@ import pytest
 from pydantic import ValidationError
 
 from agent_work_layer import (
+    ORDER_SPEC,
+    REPORT_SPEC,
     Criterion,
     Effect,
     Evidence,
     WorkOrder,
     WorkReport,
     WorkResult,
+    order_spec_for,
+    report_spec_for,
     validate_order,
     validate_report,
     work_order_schema,
@@ -41,7 +45,7 @@ def test_builds_an_order_in_python():
     o = build_order()
     doc = o.to_dict()
     assert doc["from"] == "agent:manager"
-    assert doc["spec"] == "awl/work-order@0.4"
+    assert doc["spec"] == "awl/work-order@0.1"
     assert doc["created_at"] == "2026-01-01T09:00:00.000Z"
     assert doc["deadline"] == "2026-01-01T11:00:00.000Z"
     assert doc["budget"] == {"usd": 2, "tool_calls": 20}
@@ -115,9 +119,22 @@ def test_reads_every_order_version():
     assert [f.rule for f in validate_order({**doc, "spec": "awl/work-order@0.5"})] == ["O1"]
 
 
+def test_writes_the_lowest_version_that_has_every_field_used():
+    handoff = {"next_step": "send it"}
+    assert build_order(handoff=handoff).to_dict()["spec"] == "awl/work-order@0.2"
+    assert build_order(handoff=handoff, continues="wo_41").to_dict()["spec"] == "awl/work-order@0.3"
+    assert build_order(spec="awl/work-order@0.4").to_dict()["spec"] == "awl/work-order@0.4"
+    assert WorkOrder.model_validate(build_order().to_dict()).spec == "awl/work-order@0.1"
+    assert order_spec_for({"staged": [], "handoff": handoff}) == ORDER_SPEC
+    assert [report_spec_for(r) for r in ({}, {"handoff": handoff}, {"effects": []})] == [
+        "awl/work-report@0.1", "awl/work-report@0.2", REPORT_SPEC,
+    ]
+
+
 def test_staged_tools_and_effects():
     order = build_order(tools=["filings/*", "gmail/*"], staged=["gmail/send"])
     assert order.to_dict()["staged"] == ["gmail/send"]
+    assert order.to_dict()["spec"] == "awl/work-order@0.4"
     assert validate_order(order) == []
     assert [f.rule for f in validate_order(build_order(staged=["gmail/send"]))] == ["O5"]
 

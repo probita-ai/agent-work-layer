@@ -1,0 +1,7 @@
+{
+  "tools": [
+    "accept_work_order", "answer_question", "cancel_work_order", "create_work_order", "decline_work_order", "get_track_record",
+    "get_work_order", "list_work_orders", "report_progress", "review_work_report", "start_work_order", "submit_work_report",
+    "wait_for_update"
+  ]
+}

@@ -16,7 +16,8 @@
     "test": "npm test --workspaces",
     "test:coverage": "npm run test:coverage -w agent-work-layer",
     "test:package": "npm run build && node scripts/package-smoke.ts",
-    "check": "npm run typecheck && npm test && npm run test:package",
+    "test:probe": "npm run build && node scripts/mcp-probe.mjs --expect scripts/mcp-tools.json -- node packages/mcp/dist/cli.js",
+    "check": "npm run typecheck && npm test && npm run test:package && npm run test:probe",
     "generate": "npm run generate -w agent-work-layer"
   },
   "devDependencies": {

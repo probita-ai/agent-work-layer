@@ -1,0 +1,124 @@
+name: MCP install paths
+
+# Starts the MCP server every way people and registry scanners get it, each in a fresh Node
+# container, and checks it with scripts/mcp-probe.mjs: handshake, the tools in
+# scripts/mcp-tools.json, a read-only call, and a write read back. The server runs with
+# --network=none, as scanners run it.
+#
+#   source:    npm install && npm run build inside packages/mcp only, as a scanner building from GitHub does
+#   packed:    the tarballs npm publish would upload, installed into an empty project
+#   published: the version on npm, through npx as users run it, then installed and run offline
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "agent-work-layer-mcp version to check on npm"
+        default: latest
+  workflow_call:
+    inputs:
+      version:
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  source:
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [20, 22, 24]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build inside packages/mcp only
+        run: |
+          mkdir -p /tmp/src && git archive HEAD | tar -x -C /tmp/src
+          docker run --rm -v /tmp/src:/src -w /src/packages/mcp node:${{ matrix.node }}-slim \
+            sh -c "npm install --no-audit --no-fund && npm run build"
+      - name: Probe with no config, offline
+        run: |
+          docker run --rm --network=none -v /tmp/src:/src:ro -v "$PWD/scripts:/probe:ro" -w /tmp node:${{ matrix.node }}-slim \
+            node /probe/mcp-probe.mjs --expect /probe/mcp-tools.json -- node /src/packages/mcp/dist/cli.js
+      - name: Probe as a manager, offline
+        run: |
+          docker run --rm --network=none -e AWL_ACTOR=agent:manager -v /tmp/src:/src:ro -v "$PWD/scripts:/probe:ro" -w /tmp node:${{ matrix.node }}-slim \
+            node /probe/mcp-probe.mjs --exercise -- node /src/packages/mcp/dist/cli.js
+
+  packed:
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [20, 22, 24]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Pack both packages
+        run: |
+          npm ci && npm run build
+          mkdir -p /tmp/pkgs /tmp/app
+          npm pack -w agent-work-layer -w agent-work-layer-mcp --pack-destination /tmp/pkgs
+      - name: Install the tarballs into an empty project
+        run: |
+          docker run --rm -v /tmp/pkgs:/pkgs:ro -v /tmp/app:/app -w /app node:${{ matrix.node }}-slim \
+            sh -c 'echo "{\"private\":true}" > package.json && npm install --no-audit --no-fund /pkgs/*.tgz'
+      - name: Probe with no config, offline
+        run: |
+          docker run --rm --network=none -v /tmp/app:/app:ro -v "$PWD/scripts:/probe:ro" -w /tmp node:${{ matrix.node }}-slim \
+            node /probe/mcp-probe.mjs --expect /probe/mcp-tools.json -- node /app/node_modules/.bin/awl-desk
+      - name: Probe as a manager, offline
+        run: |
+          docker run --rm --network=none -e AWL_ACTOR=agent:manager -v /tmp/app:/app:ro -v "$PWD/scripts:/probe:ro" -w /tmp node:${{ matrix.node }}-slim \
+            node /probe/mcp-probe.mjs --exercise -- node /app/node_modules/.bin/awl-desk
+
+  published:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || inputs.version != ''
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [20, 22, 24]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Pick the version
+        id: pick
+        run: |
+          want="${{ inputs.version || 'latest' }}"
+          # Right after a publish the registry can lag; wait for the version to appear.
+          for i in $(seq 1 30); do
+            version=$(npm view "agent-work-layer-mcp@$want" version 2>/dev/null | tail -1) && [ -n "$version" ] && break
+            sleep 10
+          done
+          [ -n "$version" ] || { echo "agent-work-layer-mcp@$want is not on npm"; exit 1; }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          # The expected tools are this checkout's; compare only when it is the same version.
+          if [ "$version" = "$(node -p "require('./packages/mcp/package.json').version")" ]; then
+            echo "expect=--expect /probe/mcp-tools.json" >> "$GITHUB_OUTPUT"
+          fi
+      - name: npx with no config, as users run it
+        run: |
+          docker run --rm -v "$PWD/scripts:/probe:ro" -w /tmp node:${{ matrix.node }}-slim \
+            node /probe/mcp-probe.mjs ${{ steps.pick.outputs.expect }} -- npx -y agent-work-layer-mcp@${{ steps.pick.outputs.version }}
+      - name: npx as a manager
+        run: |
+          docker run --rm -e AWL_ACTOR=agent:manager -v "$PWD/scripts:/probe:ro" -w /tmp node:${{ matrix.node }}-slim \
+            node /probe/mcp-probe.mjs --exercise -- npx -y agent-work-layer-mcp@${{ steps.pick.outputs.version }}
+      - name: Installed from npm, run offline
+        run: |
+          mkdir -p /tmp/app
+          docker run --rm -v /tmp/app:/app -w /app node:${{ matrix.node }}-slim \
+            sh -c 'echo "{\"private\":true}" > package.json && npm install --no-audit --no-fund agent-work-layer-mcp@${{ steps.pick.outputs.version }}'
+          docker run --rm --network=none -v /tmp/app:/app:ro -v "$PWD/scripts:/probe:ro" -w /tmp node:${{ matrix.node }}-slim \
+            node /probe/mcp-probe.mjs ${{ steps.pick.outputs.expect }} -- node /app/node_modules/.bin/awl-desk

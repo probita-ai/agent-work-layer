@@ -200,13 +200,15 @@ describe("--commit at the crash boundaries", () => {
     assert.equal(deliveries(s.sent).length, 1);
   });
 
-  test("--settle records what the receiver shows, and --retry runs only what the manager allowed", async () => {
+  test("an inaccurate settlement note is trusted; explicit retry can duplicate the fake effect", async () => {
     const s = await approved("exit");
     assert.equal(s.commit().outcome, "unknown");
     s.setMode("answer");
     const run = (...flags: string[]) => spawnSync(process.execPath, [...s.gateway, ...flags], { encoding: "utf8" });
 
     assert.equal(run("--settle", "gmail/send#1", "--outcome", "not_run").status, 2);
+    // Deliberately false evidence: the receiver already recorded attempt 1.
+    assert.equal(deliveries(s.sent).length, 1);
     const settled = run("--settle", "gmail/send#1", "--outcome", "not-run", "--note", "receiver log has no gmail/send#1");
     assert.equal(settled.status, 0, settled.stderr);
     assert.equal(JSON.parse(settled.stdout).outcome, "not_run");
@@ -221,6 +223,48 @@ describe("--commit at the crash boundaries", () => {
     // The same ref both times, so a receiver that dedupes would have dropped the second.
     assert.deepEqual(deliveries(s.sent).map((d) => [d.ref, d.try ?? 1]), [["gmail/send#1", 1], ["gmail/send#1", 2]]);
     assert.equal(run("--commit", "--retry").status, 2);
+  });
+
+  test("a positive receiver record settles ok without replaying the effect", async () => {
+    const s = await approved("exit");
+    assert.equal(s.commit().outcome, "unknown");
+    assert.deepEqual(deliveries(s.sent), [{ tool: "gmail/send", q: "hi", ref: "gmail/send#1", order: s.id }]);
+    const run = (...flags: string[]) => spawnSync(process.execPath, [...s.gateway, ...flags], { encoding: "utf8" });
+    const settled = run("--settle", "gmail/send#1", "--outcome", "ok", "--note", `Observed matching order/ref attempt 1 in ${s.sent}`);
+    assert.equal(settled.status, 0, settled.stderr);
+    assert.equal(JSON.parse(settled.stdout).outcome, "ok");
+    s.setMode("answer");
+    const retry = run("--retry");
+    assert.equal(retry.status, 0, retry.stderr);
+    assert.deepEqual(JSON.parse(retry.stdout), []);
+    assert.deepEqual([s.commit().outcome, s.commit().outcome], ["ok", "ok"]);
+    assert.equal(deliveries(s.sent).length, 1);
+  });
+
+  test("a positive receiver pre-effect stop needs manager permission for one retry", async () => {
+    const s = await approved("stop");
+    assert.equal(s.commit().outcome, "unknown");
+    assert.equal(existsSync(s.sent), false);
+    assert.deepEqual(readFileSync(`${s.sent}.audit`, "utf8").trim().split("\n").map((l) => JSON.parse(l)), [{ phase: "stopped-before-effect", ref: "gmail/send#1", order: s.id }]);
+    const run = (...flags: string[]) => spawnSync(process.execPath, [...s.gateway, ...flags], { encoding: "utf8" });
+    const settled = run("--settle", "gmail/send#1", "--outcome", "not-run", "--note", `Observed matching stop marker in ${s.sent}.audit before any fake effect`);
+    assert.equal(settled.status, 0, settled.stderr);
+    assert.equal(JSON.parse(settled.stdout).outcome, "not_run");
+    s.setMode("answer");
+    const before = run("--retry");
+    assert.equal(before.status, 0, before.stderr);
+    assert.deepEqual(JSON.parse(before.stdout), []);
+    assert.equal(existsSync(s.sent), false);
+    await assert.rejects(s.desk.allowRetry(s.id, WORKER, ["gmail/send#1"]), (e: unknown) => (e as { code: string }).code === "FORBIDDEN");
+    await s.desk.allowRetry(s.id, MANAGER, ["gmail/send#1"]);
+    const retry = run("--retry");
+    assert.equal(retry.status, 0, retry.stderr);
+    assert.deepEqual(JSON.parse(retry.stdout).map((c: { outcome: string; retry: number }) => [c.outcome, c.retry]), [["ok", 1]]);
+    const again = run("--retry");
+    assert.equal(again.status, 0, again.stderr);
+    assert.deepEqual(JSON.parse(again.stdout), []);
+    assert.equal(s.commit().outcome, "ok");
+    assert.deepEqual(deliveries(s.sent), [{ tool: "gmail/send", q: "hi", ref: "gmail/send#1", order: s.id, try: 2 }]);
   });
 
   test("a recorded result is not sent again when --commit repeats", async () => {

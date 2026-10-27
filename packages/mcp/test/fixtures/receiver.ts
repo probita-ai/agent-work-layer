@@ -3,6 +3,7 @@
 //   answer: replies as usual.
 //   hang:   records the call and never replies, as when the gateway dies waiting for it.
 //   exit:   records the call and exits before replying, so the answer is lost.
+//   stop:   records a positive pre-effect stop in a separate audit file, then exits.
 import { appendFileSync, readFileSync } from "node:fs";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
@@ -14,6 +15,10 @@ export type Delivery = { tool: string; q?: string; ref?: unknown; order?: unknow
 export function receiverServer(file: string, mode: string) {
   const server = new McpServer({ name: "gmail", version: "0" });
   server.registerTool("send", { description: "send on gmail", inputSchema: { q: z.string().optional() } }, async ({ q }, extra) => {
+    if (mode === "stop") {
+      appendFileSync(`${file}.audit`, JSON.stringify({ phase: "stopped-before-effect", ref: extra._meta?.["awl/ref"], order: extra._meta?.["awl/order"] }) + "\n");
+      process.exit(0);
+    }
     appendFileSync(file, JSON.stringify({ tool: "gmail/send", q, ref: extra._meta?.["awl/ref"], order: extra._meta?.["awl/order"], try: extra._meta?.["awl/try"] }) + "\n");
     if (mode === "hang") return new Promise<never>(() => {});
     if (mode === "exit") process.exit(0);

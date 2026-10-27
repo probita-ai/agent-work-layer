@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.9.0 — 2026-10-26
+
+Both packages: `agent-work-layer` 0.9.0 and `agent-work-layer-mcp` 0.9.0. Spec v0.4; document formats are unchanged. New events on approved orders (SPEC.md §6.4).
+
+### Added
+
+- Settling and retrying staged effects after approval (#45), SPEC.md §6.4 and §9.1 rule 11. Finding out what happened to an effect and allowing it to run again are separate steps, done by different people:
+  - The worker records what it found out about an `unknown` effect (for example from the receiver's records, which carry the effect's `awl/ref`): `awl-desk gateway --settle <ref> --outcome ok|not_run --note <evidence>` (`gateway.settle()`, `desk.settle()`). Settling never runs anything. Settling as `ok` can include the result, so later effects that use it can run.
+  - The manager allows one more try of an effect that never happened, one settled `not_run` or one `skipped`: the `allow_effect_retry` MCP tool (`desk.allowRetry()`).
+  - `awl-desk gateway --retry` (`gateway.retry()`) then runs it once. It rechecks that the order is approved, that the effect is approved, and that it matches the staged call. It sends the same `_meta["awl/ref"]` with `_meta["awl/try"]` (2 for the first retry), so a receiver that dedupes still drops a duplicate.
+- The order's record shows what happened to its effects: the gateway records a `commit` event with each run's outcomes. If recording one fails, the next run catches the desk up. New `approvedEffects(record)` and `effectOutcomes(record)`, the `EffectOutcome` type, and `WorkEvent.outcomes`.
+
+### Fixed
+
+- A commit that crashed no longer blocks later commits until someone removes its lock by hand (#44). The lock records the process holding it, and the next run on the same machine takes over a lock whose process has died. A lock held by a live process, by another machine, or written by 0.8.x is still refused, with the reason. If two processes find a dead lock at once, only one takes it over.
+
+### Changed
+
+- TypeScript: `WorkEvent.action` adds `"commit"`, `"settle"` and `"allow_retry"`; `CallRecord.outcome` and `Committed.outcome` add `"not_run"`; `Gateway` adds `settle()` and `retry()`. Exhaustive `switch` statements over these may need new cases.
+- The desk MCP server has 14 tools (`allow_effect_retry` is new). `agent-work-layer-mcp` depends on `agent-work-layer` ^0.9.0.
+
 ## 0.8.1 — 2026-10-26
 
 `agent-work-layer-mcp` alone (`agent-work-layer` stays at 0.8.0).

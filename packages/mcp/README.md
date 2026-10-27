@@ -55,6 +55,7 @@ Flags win over the environment. Installed locally, the command is `awl-desk`.
 | `submit_work_report` | worker | Report `done`, `blocked` or `failed`, with evidence, staged `effects` and an optional `handoff` |
 | `answer_question` | manager or escalation contact | Unblock a worker |
 | `review_work_report` | manager | Approve (staged effects may then run, or only the `effects` named), or send back for rework (they are dropped) |
+| `allow_effect_retry` | manager | After approval, let the gateway run once more an effect that never happened (settled `not_run`, or skipped) |
 | `cancel_work_order` | manager | Stop an unfinished order |
 | `wait_for_update` | anyone | Wait for the next change to an order, progress notes included |
 | `get_track_record` | anyone | A worker's record on this desk: outcomes, reworks, reports, spending against budget |
@@ -184,9 +185,20 @@ An order's `staged` tools are ones whose calls should wait for the manager's rev
 npx -y agent-work-layer-mcp gateway --order wo_123 --config upstream.json --commit
 ```
 
-`--commit` (in code, `gateway.commit()`) runs nothing unless the order is approved and every effect to run matches a staged call in the log: same ref, tool and arguments, made since the last rework. If the manager approved only some effects, only those run. It runs them in the report's order and logs each result with `commit: true`. A failed effect is recorded, not retried, and the effects after it still run. Running `--commit` again runs nothing twice. Each call carries the effect's ref and order id in `_meta["awl/ref"]` and `_meta["awl/order"]`, so the receiving service can drop a duplicate and you can look the effect up there. If a call gets no answer (the connection drops or times out), the effect's outcome is `unknown`: it may have happened, so it is never run again; check the receiving service. Before each call `--commit` also logs a `running` line, so if the process dies mid-call, the next `--commit` records that effect as `unknown` too instead of running it again. While a commit runs, a `<log>.commit-lock` file keeps a second one from starting; if a commit crashed, check the log and remove the lock. Staged calls the report leaves out never run.
+`--commit` (in code, `gateway.commit()`) runs nothing unless the order is approved and every effect to run matches a staged call in the log: same ref, tool and arguments, made since the last rework. If the manager approved only some effects, only those run. It runs them in the report's order and logs each result with `commit: true`. A failed effect is recorded, not retried, and the effects after it still run. Running `--commit` again runs nothing twice. Each call carries the effect's ref and order id in `_meta["awl/ref"]` and `_meta["awl/order"]`, so the receiving service can drop a duplicate and you can look the effect up there. If a call gets no answer (the connection drops or times out), the effect's outcome is `unknown`: it may have happened, so it is never run again; check the receiving service. Before each call `--commit` also logs a `running` line, so if the process dies mid-call, the next `--commit` records that effect as `unknown` too instead of running it again. While a commit runs, a `<log>.commit-lock` file keeps a second one from starting. The lock records the process holding it, so if that process has died, the next run on the same machine takes it over; a lock held by a live process, or from another machine, is left alone. Staged calls the report leaves out never run. Each run also records its outcomes on the order as a `commit` event, so the manager sees them.
 
-To use an earlier staged call's result, pass a reference as an argument when making the staged call: `{"$ref": "github/create_issue#3", "pointer": "/structuredContent/number"}`. `--commit` fills it in from that effect's result, a `CallToolResult`. If that effect failed, was skipped or has an unknown outcome, or has nothing at the pointer, the effect using it is skipped (`outcome: "skipped"`, with the reason). A reference to a staged call in a call to a tool that is *not* staged is refused with `PENDING_REFERENCE`, since that result exists only after approval; the refused call doesn't count against `tool_calls`.
+To use an earlier staged call's result, pass a reference as an argument when making the staged call: `{"$ref": "github/create_issue#3", "pointer": "/structuredContent/number"}`. `--commit` fills it in from that effect's result, a `CallToolResult`. If that effect failed, was skipped or has an unknown outcome, or has nothing at the pointer, the effect using it is skipped (`outcome: "skipped"`, with the reason). **When an effect's outcome is unknown.** Find out from the receiving service (look for the effect's `awl/ref`), then record it ([SPEC.md §6.4](https://github.com/probita-ai/agent-work-layer/blob/main/SPEC.md#64-effect-outcomes)):
+
+```sh
+# It happened; optionally give its result so later effects that use it can run.
+awl-desk gateway --order wo_1 --config servers.json --settle github/create_issue#3 --outcome ok --note "issue #812 has awl/ref github/create_issue#3"
+# It did not happen.
+awl-desk gateway --order wo_1 --config servers.json --settle github/create_issue#3 --outcome not_run --note "no issue with that awl/ref"
+```
+
+Settling runs nothing. To run an effect again, the manager allows it with `allow_effect_retry` (`desk.allowRetry()`), and then `--retry` (`gateway.retry()`) runs it once, only if it is settled `not_run` or was skipped. The retry rechecks the approval and the staged call, and sends the same `awl/ref` with `_meta["awl/try"]: 2`, so a receiver that dedupes still drops a duplicate.
+
+A reference to a staged call in a call to a tool that is *not* staged is refused with `PENDING_REFERENCE`, since that result exists only after approval; the refused call doesn't count against `tool_calls`.
 
 ## Delegation Passes
 

@@ -9,7 +9,7 @@ import type { DeskStore } from "./store.ts";
 import { effectReferences, hasInvalid, heldBySubOrders, validateChildBudgets, validateChildOrder, validateOrder, validateOwnCost, validateReport } from "./validate.ts";
 import { UNITS, orderSpecFor, reportSpecFor } from "./types.ts";
 import type {
-  Action, AgentRef, Amounts, Finding, OrderRecord, OrderSummary, State, TrackRecord,
+  Action, AgentRef, Amounts, EffectOutcome, Finding, OrderRecord, OrderSummary, State, TrackRecord,
   WorkEvent, WorkOrder, WorkOrderInput, WorkReport, WorkReportInput,
 } from "./types.ts";
 
@@ -71,6 +71,22 @@ export interface SubmitResult {
 }
 
 export const lastSeq = (record: OrderRecord): number => record.events.at(-1)?.seq ?? 0;
+
+/** The refs of the effects the approval lets run (all of the last report's, unless it chose), in the report's order (§4.6). */
+export function approvedEffects(record: OrderRecord): string[] {
+  const approve = record.events.findLast((e) => e.action === "approve");
+  const listed = (record.reports.at(-1)?.effects ?? []).map((e) => e.ref);
+  return approve?.effects ? listed.filter((ref) => approve.effects!.includes(ref)) : listed;
+}
+
+/** What is known of each effect from the order's `commit` and `settle` events; the latest wins (§6.4). */
+export function effectOutcomes(record: OrderRecord): Map<string, EffectOutcome> {
+  const out = new Map<string, EffectOutcome>();
+  for (const e of record.events) for (const o of e.outcomes ?? []) out.set(o.ref, o);
+  return out;
+}
+
+const RAN = new Set<EffectOutcome["outcome"]>(["ok", "error", "skipped", "unknown"]);
 
 export function summarize(record: OrderRecord): OrderSummary {
   const { id, from, to, goal, deadline, parent_id, continues } = record.order;
@@ -259,6 +275,29 @@ export class WorkDesk {
     return record;
   }
 
+  /**
+   * Lets the worker's gateway run approved effects once more that never happened: those settled
+   * `not_run`, and those `skipped` (§6.4). Each call allows one more try of each effect it names.
+   */
+  async allowRetry(id: string, actor: AgentRef, effects: string[], reason?: string): Promise<OrderRecord> {
+    requireActor(actor);
+    let event!: WorkEvent;
+    const record = await this.#mutate(id, (rec) => {
+      if (actor !== rec.order.from) throw new AwlError("FORBIDDEN", `"${actor}" may not allow retries on order "${id}"`);
+      const known = this.#approved(rec, effects, "allow a retry");
+      for (const ref of effects) {
+        const outcome = known.get(ref)?.outcome;
+        if (outcome !== "not_run" && outcome !== "skipped") {
+          throw new AwlError("INVALID_TRANSITION", `effect "${ref}" is ${outcome ?? "not run yet"}; only one settled as not_run, or skipped, can be retried`);
+        }
+      }
+      event = this.#record(rec, actor, "allow_retry", "approved", reason);
+      event.effects = approvedEffects(rec).filter((ref) => effects.includes(ref));
+    });
+    this.#emit(event, record);
+    return record;
+  }
+
   async cancel(id: string, actor: AgentRef, reason?: string): Promise<OrderRecord> {
     return this.#act(id, "cancel", actor, reason);
   }
@@ -281,6 +320,30 @@ export class WorkDesk {
     });
     this.#emit(event, record);
     return record;
+  }
+
+  /** Records what became of approved effects when the worker's gateway ran them (§6.4). Changes no state. */
+  async recordCommit(id: string, actor: AgentRef, outcomes: EffectOutcome[]): Promise<OrderRecord> {
+    requireActor(actor);
+    for (const o of outcomes ?? []) {
+      if (!RAN.has(o.outcome)) throw new AwlError("BAD_REQUEST", `a commit records ok, error, skipped or unknown, not "${o.outcome}"`);
+    }
+    return this.#onEffects(id, actor, "commit", outcomes);
+  }
+
+  /**
+   * Records what the worker found out about an effect whose outcome was `unknown`: that it happened
+   * (`ok`) or did not (`not_run`), with the evidence in `note` (§6.4). Settling never runs it again;
+   * only the manager can allow a retry.
+   */
+  async settle(id: string, actor: AgentRef, ref: string, outcome: "ok" | "not_run", note: string): Promise<OrderRecord> {
+    requireActor(actor);
+    if (outcome !== "ok" && outcome !== "not_run") throw new AwlError("BAD_REQUEST", `an effect is settled as ok or not_run, not "${outcome}"`);
+    if (!note?.trim()) throw new AwlError("BAD_REQUEST", "settling needs a note with the evidence");
+    return this.#onEffects(id, actor, "settle", [{ ref, outcome, note }], (known) => {
+      const now = known.get(ref)?.outcome;
+      if (now !== "unknown") throw new AwlError("INVALID_TRANSITION", `effect "${ref}" is ${now ?? "not run yet"}; only an unknown outcome can be settled`);
+    });
   }
 
   async accept(id: string, actor: AgentRef): Promise<OrderRecord> {
@@ -367,6 +430,31 @@ export class WorkDesk {
   async #syncPass(record: OrderRecord, before: State) {
     if (record.state !== "working") delete record.pass;
     else if (this.#passes && before !== "working") record.pass = await this.#sign(record);
+  }
+
+  /** The outcomes known so far, once checked that the order is approved and every ref is an approved effect. */
+  #approved(record: OrderRecord, refs: string[], what: string): Map<string, EffectOutcome> {
+    if (record.state !== "approved") throw new AwlError("INVALID_TRANSITION", `cannot ${what} on an order that is ${record.state}`);
+    if (!refs?.length) throw new AwlError("BAD_REQUEST", "name at least one effect");
+    if (new Set(refs).size !== refs.length) throw new AwlError("BAD_REQUEST", "each effect may be named once");
+    const approved = approvedEffects(record);
+    const stray = refs.find((ref) => !approved.includes(ref));
+    if (stray) throw new AwlError("BAD_REQUEST", `"${stray}" is not an approved effect of order "${record.order.id}"`);
+    return effectOutcomes(record);
+  }
+
+  /** Records a worker's `commit` or `settle` event on an approved order. */
+  async #onEffects(id: string, actor: AgentRef, action: "commit" | "settle", outcomes: EffectOutcome[], check?: (known: Map<string, EffectOutcome>) => void) {
+    let event!: WorkEvent;
+    const record = await this.#mutate(id, (rec) => {
+      if (actor !== rec.order.to) throw new AwlError("FORBIDDEN", `"${actor}" may not ${action} effects on order "${id}"`);
+      const known = this.#approved(rec, (outcomes ?? []).map((o) => o.ref), action === "commit" ? "record effects" : "settle an effect");
+      check?.(known);
+      event = this.#record(rec, actor, action, "approved");
+      event.outcomes = outcomes.map(({ ref, outcome, note }) => ({ ref, outcome, ...(note ? { note } : {}) }));
+    });
+    this.#emit(event, record);
+    return record;
   }
 
   #emit(event: WorkEvent, record: OrderRecord) {

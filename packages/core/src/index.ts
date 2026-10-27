@@ -16,7 +16,7 @@ export { signPass, verifyPass, decodePass, PassError, PASS_TYP, PASS_TTL_SECONDS
 export type { PassClaims, PassKey, PassKeys, PassJwk, PassCryptoKey, PassErrorCode, SignPassOptions, VerifyPassOptions, VerifiedPass } from "./pass.ts";
 export { STATES, TERMINAL_STATES, ROLE_FOR, isTerminal, nextState, allowedActions } from "./lifecycle.ts";
 export type { Role } from "./lifecycle.ts";
-export { WorkDesk, summarize, lastSeq } from "./desk.ts";
+export { WorkDesk, summarize, lastSeq, approvedEffects, effectOutcomes } from "./desk.ts";
 export type { DeskOptions, PassOptions, ListFilter, ReviewOptions, TrackRecordOptions, WaitOptions, SubmitResult } from "./desk.ts";
 export { MemoryStore, FileStore, SqliteStore } from "./store.ts";
 export type { DeskStore } from "./store.ts";

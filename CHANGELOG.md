@@ -1,15 +1,24 @@
 # Changelog
 
-## Unreleased
+## 0.8.0 — 2026-10-26
+
+Both packages: `agent-work-layer` 0.8.0 and `agent-work-layer-mcp` 0.8.0. Spec v0.4; document formats are unchanged, but new documents are marked with the lowest version they need.
 
 ### Changed
 
 - New documents are marked with the lowest version that defines every field they use (#39), so readers from 0.6 and earlier (`agent-work-layer` 0.6.x, Python 0.3.0, older `awl validate`) keep accepting documents that don't use the newer fields. An order with `staged` is still `awl/work-order@0.4`, one with `continues` `@0.3`, one with `handoff` `@0.2`, any other `@0.1`; a report with `effects` is `awl/work-report@0.3`, one with `handoff` `@0.2`, any other `@0.1`. `WorkDesk.create`, `WorkDesk.submitReport`, `awl new` and the Python models' default `spec` all do this; a `spec` set explicitly on a Python model is kept. Readers are unchanged. SPEC.md §11 now says a writer SHOULD use the lowest such version and MUST NOT go lower. Orders with `staged` still need a 0.7 gateway.
   - New `orderSpecFor` / `reportSpecFor` in `agent-work-layer` (and `agent-work-layer/validate`), `order_spec_for` / `report_spec_for` in Python. `ORDER_SPEC` and `REPORT_SPEC` remain the newest versions.
+- `agent-work-layer-mcp` now depends on `agent-work-layer` ^0.8.0, so its desk writes the lowest version too, and on zod 4 (#37).
 
 ### Fixed
 
-- `agent-work-layer-mcp` gateway (#34): a call to a tool that is not staged, whose arguments contain a reference to a staged call (`{"$ref": "<server>/<tool>#<n>"}` with that tool staged), is refused with the new `PENDING_REFERENCE` code instead of reaching the tool with the literal object. That result exists only after approval. Refused calls don't count against `tool_calls`; with `--observe` (`enforce: false`) the call goes through and is logged with that `violation`. A `$ref` that names no staged call, such as a JSON Schema's, is passed through as before. SPEC.md §4.6 and §9.1 rule 9 now say a gateway MUST refuse such a call.
+- `agent-work-layer-mcp` gateway (#34): a call to a tool that is not staged, whose arguments contain a reference to a staged call (`{"$ref": "<server>/<tool>#<n>"}` with that tool staged), is refused with the new `PENDING_REFERENCE` code instead of reaching the tool with the literal object. That result exists only after approval. Refused calls don't count against `tool_calls`; with `--observe` (`enforce: false`) the call goes through and is logged with that `violation`. A `$ref` that names no staged call, such as a JSON Schema's, is passed through as before. SPEC.md §4.6 and §9.1 rule 9 now say a gateway MUST refuse such a call. TypeScript: `RefusalCode` adds `"PENDING_REFERENCE"`, so an exhaustive `switch` over it may need a new case.
+
+## python 0.5.0 — 2026-10-26
+
+### Changed
+
+- `WorkOrder` and `WorkReport` get the lowest version that has every field they use when `spec` isn't set (#39): an order is `@0.1`, `@0.2` with `handoff`, `@0.3` with `continues`, `@0.4` with `staged`; a report is `@0.1`, `@0.2` with `handoff`, `@0.3` with `effects`. A `spec` you set is kept. New `order_spec_for(order)` and `report_spec_for(report)`, the same as `agent-work-layer` 0.8.0's `orderSpecFor` and `reportSpecFor`.
 
 ## 0.7.1 — 2026-10-25
 

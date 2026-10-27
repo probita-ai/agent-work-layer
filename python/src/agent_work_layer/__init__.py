@@ -41,7 +41,7 @@ from .validate import (
     work_report_schema,
 )
 
-__version__ = "0.4.0"
+__version__ = "0.5.0"
 
 __all__ = [
     "Amounts", "Artifact", "Attempt", "ContextRef", "Criterion", "Decision", "Effect", "Evidence", "Handoff",

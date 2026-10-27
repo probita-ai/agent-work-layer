@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- `agent-work-layer-mcp` gateway (#34): a call to a tool that is not staged, whose arguments contain a reference to a staged call (`{"$ref": "<server>/<tool>#<n>"}` with that tool staged), is refused with the new `PENDING_REFERENCE` code instead of reaching the tool with the literal object. That result exists only after approval. Refused calls don't count against `tool_calls`; with `--observe` (`enforce: false`) the call goes through and is logged with that `violation`. A `$ref` that names no staged call, such as a JSON Schema's, is passed through as before. SPEC.md §4.6 and §9.1 rule 9 now say a gateway MUST refuse such a call.
+
 ## 0.7.1 — 2026-10-25
 
 Both packages: `agent-work-layer` 0.7.1 and `agent-work-layer-mcp` 0.7.1. Documentation only; no code changes.

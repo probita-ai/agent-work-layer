@@ -163,7 +163,7 @@ claude mcp add work -e AWL_STORE="$HOME/.awl" -- npx -y agent-work-layer-mcp gat
 | `--observe` | | off | Log only, refuse nothing (see below) |
 | `--commit` | | off | Run the approved report's staged effects, print the results and exit (see below) |
 
-**Already enforce access with your own gateway or policy engine?** Run with `--observe` (in code, `enforce: false`). The gateway then lists every tool and refuses nothing. It still numbers and logs every call and reports usage. Calls the order would have refused are logged with a `violation` (`TOOL_NOT_ALLOWED`, `BUDGET_SPENT` or `ORDER_NOT_WORKING`), and the desk still catches them in the report (R5, R7).
+**Already enforce access with your own gateway or policy engine?** Run with `--observe` (in code, `enforce: false`). The gateway then lists every tool and refuses nothing. It still numbers and logs every call and reports usage. Calls the order would have refused are logged with a `violation` (`TOOL_NOT_ALLOWED`, `BUDGET_SPENT`, `ORDER_NOT_WORKING` or `PENDING_REFERENCE`), and the desk still catches them in the report (R5, R7).
 
 The gateway cannot measure `usd` or `tokens`; the desk still checks those when the report arrives. See [SPEC.md §9.1](https://github.com/probita-ai/agent-work-layer/blob/main/SPEC.md#91-mcp-gateway).
 
@@ -186,7 +186,7 @@ npx -y agent-work-layer-mcp gateway --order wo_123 --config upstream.json --comm
 
 `--commit` (in code, `gateway.commit()`) runs nothing unless the order is approved and every effect to run matches a staged call in the log: same ref, tool and arguments, made since the last rework. If the manager approved only some effects, only those run. It runs them in the report's order and logs each result with `commit: true`. A failed effect is recorded, not retried, and the effects after it still run. Running `--commit` again runs nothing twice. Before each call it logs a `running` line, so if the process dies mid-call, the next `--commit` records that effect as an error (it may have run) instead of running it again. While a commit runs, a `<log>.commit-lock` file keeps a second one from starting; if a commit crashed, check the log and remove the lock. Staged calls the report leaves out never run.
 
-To use an earlier staged call's result, pass a reference as an argument when making the staged call: `{"$ref": "github/create_issue#3", "pointer": "/structuredContent/number"}`. `--commit` fills it in from that effect's result, a `CallToolResult`. If that effect failed or was skipped, or has nothing at the pointer, the effect using it is skipped (`outcome: "skipped"`, with the reason).
+To use an earlier staged call's result, pass a reference as an argument when making the staged call: `{"$ref": "github/create_issue#3", "pointer": "/structuredContent/number"}`. `--commit` fills it in from that effect's result, a `CallToolResult`. If that effect failed or was skipped, or has nothing at the pointer, the effect using it is skipped (`outcome: "skipped"`, with the reason). A reference to a staged call in a call to a tool that is *not* staged is refused with `PENDING_REFERENCE`, since that result exists only after approval; the refused call doesn't count against `tool_calls`.
 
 ## Delegation Passes
 

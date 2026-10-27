@@ -39,7 +39,7 @@ The key words MUST, SHOULD and MAY are used as in RFC 2119.
 
 | Field          | Req | Type                | Meaning |
 |----------------|-----|---------------------|---------|
-| `spec`         | yes | `"awl/work-order@0.4"` | Format and version. Readers also accept `@0.1` to `@0.3` (§11). |
+| `spec`         | yes | `"awl/work-order@0.4"` | Format and version: `@0.1` to `@0.4`, the lowest that defines every field used (§11). |
 | `id`           | yes | string              | Unique job id, set by the desk or manager. |
 | `created_at`   | yes | timestamp           | When the order was issued. |
 | `from`         | yes | agent ref           | The manager. |
@@ -163,7 +163,7 @@ A sub-order may not allow a tool its parent stages (C5). Its effects would run w
 
 | Field         | Req | Type                    | Meaning |
 |---------------|-----|-------------------------|---------|
-| `spec`        | yes | `"awl/work-report@0.3"` | Format and version. Readers also accept `@0.1` and `@0.2` (§11). |
+| `spec`        | yes | `"awl/work-report@0.3"` | Format and version: `@0.1` to `@0.3`, the lowest that defines every field used (§11). |
 | `order_id`    | yes | string                  | The order this answers. |
 | `from`        | yes | agent ref               | The worker. |
 | `status`      | yes | `done` \| `blocked` \| `failed` | Outcome of this attempt. |
@@ -401,7 +401,7 @@ Each document type has its own version. v0.4 adds `staged` to the Work Order and
 | v0.3 | `@0.3` (adds `continues`) | `@0.2` |
 | v0.4 | `@0.4` (adds `staged`) | `@0.3` (adds `effects`) |
 
-A v0.4 reader MUST accept Work Orders marked `@0.1` to `@0.4`, and Work Reports marked `@0.1` to `@0.3`, and MUST reject any other version. A v0.4 writer marks new orders `@0.4` and new reports `@0.3`. Every earlier document is a valid v0.4 document once its version is accepted.
+A v0.4 reader MUST accept Work Orders marked `@0.1` to `@0.4`, and Work Reports marked `@0.1` to `@0.3`, and MUST reject any other version. A writer SHOULD mark each new document with the lowest version that defines every field it uses, and MUST NOT mark it lower than that: an order with `staged` is `@0.4`, one with `continues` (and no `staged`) `@0.3`, one with `handoff` only `@0.2`, and any other `@0.1`; a report with `effects` is `@0.3`, one with `handoff` only `@0.2`, and any other `@0.1`. Readers that predate a field then keep accepting documents that don't use it. Every earlier document is a valid v0.4 document once its version is accepted.
 
 ## 12. Planned for later versions
 

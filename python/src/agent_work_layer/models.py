@@ -13,7 +13,7 @@ from typing import Annotated, Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, model_validator
 
-from .validate import ORDER_SPEC, REPORT_SPEC
+from .validate import ORDER_SPEC, REPORT_SPEC, order_spec_for, report_spec_for
 
 AgentRef = Annotated[str, Field(min_length=1, max_length=512)]
 
@@ -45,9 +45,14 @@ class _Document(_Part):
         unknown = [k for k in (self.model_extra or {}) if not k.startswith("x-")]
         if unknown:
             raise ValueError(f"unknown fields {unknown}; extensions must start with 'x-'")
-        # `spec` always appears in to_dict(), even when left at its default.
+        # Left unset, `spec` is the lowest version that has every field used, and always appears in to_dict().
+        if "spec" not in self.model_fields_set:
+            self.spec = self._lowest_spec()
         self.model_fields_set.add("spec")
         return self
+
+    def _lowest_spec(self) -> str:
+        raise NotImplementedError
 
     def to_dict(self) -> Dict[str, Any]:
         """The document as JSON-ready data, with ``from`` spelled as in the spec."""
@@ -123,6 +128,9 @@ class WorkOrder(_Document):
     continues: Optional[Text] = None
     metadata: Optional[Dict[str, Any]] = None
 
+    def _lowest_spec(self) -> str:
+        return order_spec_for(vars(self))
+
     @model_validator(mode="after")
     def _budget_not_empty(self) -> "WorkOrder":
         if not self.budget.model_fields_set:
@@ -179,3 +187,6 @@ class WorkReport(_Document):
     error: Optional[Text] = None
     handoff: Optional[Handoff] = None
     metadata: Optional[Dict[str, Any]] = None
+
+    def _lowest_spec(self) -> str:
+        return report_spec_for(vars(self))

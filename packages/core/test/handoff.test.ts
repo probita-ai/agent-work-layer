@@ -1,6 +1,6 @@
 import { describe, test } from "node:test";
 import assert from "node:assert/strict";
-import { ORDER_SPEC, REPORT_SPEC, validateOrder, validateReport } from "../src/index.ts";
+import { validateOrder, validateReport } from "../src/index.ts";
 import type { Handoff } from "../src/index.ts";
 import { WORKER, newDesk, order, orderInput, report, reportInput, rules, workingOrder } from "./helpers.ts";
 
@@ -34,12 +34,12 @@ describe("handoff (SPEC.md §4.4)", () => {
   test("the desk stores it on both documents and writes spec 0.2", async () => {
     const { desk } = newDesk();
     const { order: created } = await desk.create(orderInput({ handoff }), "agent:manager");
-    assert.equal(created.spec, ORDER_SPEC);
+    assert.equal(created.spec, "awl/work-order@0.2");
     assert.deepEqual(created.handoff, handoff);
 
     const id = await workingOrder(desk);
     const { record } = await desk.submitReport(id, reportInput({ status: "failed", evidence: [], error: "OOM", handoff }), WORKER);
-    assert.equal(record.reports[0].spec, REPORT_SPEC);
+    assert.equal(record.reports[0].spec, "awl/work-report@0.2");
     assert.deepEqual(record.reports[0].handoff, handoff);
   });
 });

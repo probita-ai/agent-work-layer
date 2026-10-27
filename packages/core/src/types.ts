@@ -1,12 +1,28 @@
 /** Document types for AWL v0.4. Field meanings are defined in SPEC.md §4 and §5. */
 
-/** The spec version this package writes. */
+/** The newest spec version this package reads. New documents get the lowest that fits: see `orderSpecFor`. */
 export const ORDER_SPEC = "awl/work-order@0.4";
 export const REPORT_SPEC = "awl/work-report@0.3";
 
 /** Every spec version this package reads (SPEC.md §11). */
 export const ORDER_SPECS = ["awl/work-order@0.1", "awl/work-order@0.2", "awl/work-order@0.3", ORDER_SPEC] as const;
 export const REPORT_SPECS = ["awl/work-report@0.1", "awl/work-report@0.2", REPORT_SPEC] as const;
+
+/**
+ * The lowest Work Order version that defines every field `order` uses (SPEC.md §11), so readers
+ * that predate a field still accept orders that don't use it.
+ */
+export function orderSpecFor(order: Partial<WorkOrder>): WorkOrder["spec"] {
+  return order.staged !== undefined ? ORDER_SPECS[3]
+    : order.continues !== undefined ? ORDER_SPECS[2]
+    : order.handoff !== undefined ? ORDER_SPECS[1]
+    : ORDER_SPECS[0];
+}
+
+/** The lowest Work Report version that defines every field `report` uses (SPEC.md §11). */
+export function reportSpecFor(report: Partial<WorkReport>): WorkReport["spec"] {
+  return report.effects !== undefined ? REPORT_SPECS[2] : report.handoff !== undefined ? REPORT_SPECS[1] : REPORT_SPECS[0];
+}
 
 /** An Agent Card URL, an agent name, or `human:<id>`. */
 export type AgentRef = string;

@@ -7,7 +7,7 @@ import type { PassKey } from "./pass.ts";
 import { MemoryStore } from "./store.ts";
 import type { DeskStore } from "./store.ts";
 import { effectReferences, hasInvalid, heldBySubOrders, validateChildBudgets, validateChildOrder, validateOrder, validateOwnCost, validateReport } from "./validate.ts";
-import { ORDER_SPEC, REPORT_SPEC, UNITS } from "./types.ts";
+import { UNITS, orderSpecFor, reportSpecFor } from "./types.ts";
 import type {
   Action, AgentRef, Amounts, Finding, OrderRecord, OrderSummary, State, TrackRecord,
   WorkEvent, WorkOrder, WorkOrderInput, WorkReport, WorkReportInput,
@@ -184,7 +184,7 @@ export class WorkDesk {
   async create(input: WorkOrderInput, actor: AgentRef): Promise<OrderRecord> {
     requireActor(actor);
     const order = {
-      spec: ORDER_SPEC,
+      spec: orderSpecFor(input),
       created_at: this.#now(),
       ...input,
       id: input.id ?? this.#newId(),
@@ -327,7 +327,7 @@ export class WorkDesk {
       if (rec.state !== "working") throw new AwlError("INVALID_TRANSITION", `cannot report on an order that is ${rec.state}`);
 
       const report = {
-        spec: REPORT_SPEC,
+        spec: reportSpecFor(input),
         finished_at: this.#now(),
         ...input,
         attempt: rec.reports.length + 1,

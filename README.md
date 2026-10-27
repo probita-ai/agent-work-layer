@@ -259,7 +259,8 @@ While `working`, the worker can post progress notes. They are recorded as events
 | `nextState`, `allowedActions`, `STATES`, `ROLE_FOR`, `isTerminal` | The state machine |
 | `AwlError`, `isAwlError` | Typed errors with `code` and `findings` |
 | `signPass`, `verifyPass`, `decodePass`, `PassError` | [Delegation Passes](#delegation-pass): sign, verify (including narrowing against a parent), read |
-| `ORDER_SPEC`, `REPORT_SPEC`, `ORDER_SPECS`, `REPORT_SPECS` | The spec version written, and every version read |
+| `orderSpecFor`, `reportSpecFor` | The lowest version that has every field a document uses, as the desk writes it |
+| `ORDER_SPEC`, `REPORT_SPEC`, `ORDER_SPECS`, `REPORT_SPECS` | The newest spec version, and every version read |
 | `createDeskServer` (from `agent-work-layer-mcp`) | MCP server for a desk |
 | `createDeskHttpHandler`, `apiKeyAuth`, `bearerAuth`, `AuthError` (from `agent-work-layer-mcp`) | The desk over HTTP, with the actor from each request's credential |
 | `createGateway` (from `agent-work-layer-mcp`) | MCP gateway enforcing an order, or a Delegation Pass, at every tool call |

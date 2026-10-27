@@ -18,11 +18,33 @@ from jsonschema import Draft202012Validator, FormatChecker, ValidationError
 from jsonschema.exceptions import SchemaError
 from jsonschema.validators import extend
 
+#: The newest spec version this package reads. New documents get the lowest that fits: see :func:`order_spec_for`.
 ORDER_SPEC = "awl/work-order@0.4"
 REPORT_SPEC = "awl/work-report@0.3"
 #: Every spec version this package reads (SPEC.md §11).
 ORDER_SPECS = ("awl/work-order@0.1", "awl/work-order@0.2", "awl/work-order@0.3", ORDER_SPEC)
 REPORT_SPECS = ("awl/work-report@0.1", "awl/work-report@0.2", REPORT_SPEC)
+
+
+def order_spec_for(order: Mapping[str, Any]) -> str:
+    """The lowest Work Order version that defines every field ``order`` uses (SPEC.md §11).
+
+    Readers that predate a field then still accept orders that don't use it.
+    """
+    if order.get("staged") is not None:
+        return ORDER_SPECS[3]
+    if order.get("continues") is not None:
+        return ORDER_SPECS[2]
+    return ORDER_SPECS[1] if order.get("handoff") is not None else ORDER_SPECS[0]
+
+
+def report_spec_for(report: Mapping[str, Any]) -> str:
+    """The lowest Work Report version that defines every field ``report`` uses (SPEC.md §11)."""
+    if report.get("effects") is not None:
+        return REPORT_SPECS[2]
+    return REPORT_SPECS[1] if report.get("handoff") is not None else REPORT_SPECS[0]
+
+
 #: Budget and cost units (SPEC.md §4.2).
 UNITS = ("usd", "tokens", "tool_calls", "seconds")
 

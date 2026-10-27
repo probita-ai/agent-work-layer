@@ -1,7 +1,7 @@
 import { describe, test } from "node:test";
 import assert from "node:assert/strict";
 import { webcrypto } from "node:crypto";
-import { ORDER_SPEC, REPORT_SPEC, decodePass, effectReferences, signPass, validateChildOrder, validateOrder, validateReport, verifyPass } from "../src/index.ts";
+import { ORDER_SPEC, REPORT_SPEC, decodePass, orderSpecFor, reportSpecFor, effectReferences, signPass, validateChildOrder, validateOrder, validateReport, verifyPass } from "../src/index.ts";
 import type { PassJwk } from "../src/index.ts";
 import { HELPER, MANAGER, WORKER, newDesk, order, orderInput, rejectsWith, report, reportInput, rules, workingOrder } from "./helpers.ts";
 
@@ -55,6 +55,7 @@ describe("staged tools", () => {
     const { desk } = newDesk();
     const id = await workingOrder(desk, { tools: ["filings/*", "gmail/*"], staged: ["gmail/send"] });
     assert.deepEqual((await desk.get(id)).order.staged, ["gmail/send"]);
+    assert.equal((await desk.get(id)).order.spec, "awl/work-order@0.4");
 
     const e = await rejectsWith(desk.create(orderInput({ to: HELPER, parent_id: id, budget: { usd: 1, tool_calls: 5 }, tools: ["gmail/*"] }), WORKER), "VALIDATION_FAILED");
     assert.deepEqual(rules(e.findings), ["C5"]);
@@ -64,6 +65,16 @@ describe("staged tools", () => {
 
     const { record } = await desk.submitReport(id, reportInput({ effects: [effect()] }), WORKER);
     assert.deepEqual(record.reports[0].effects, [effect()]);
+    assert.equal(record.reports[0].spec, "awl/work-report@0.3");
+  });
+
+  test("documents get the lowest version that has every field they use", () => {
+    const handoff = { next_step: "send it" };
+    assert.deepEqual(
+      [{}, { handoff }, { continues: "wo_1", handoff }, { staged: [], continues: "wo_1" }].map(orderSpecFor),
+      ["awl/work-order@0.1", "awl/work-order@0.2", "awl/work-order@0.3", ORDER_SPEC],
+    );
+    assert.deepEqual([{}, { handoff }, { effects: [], handoff }].map(reportSpecFor), ["awl/work-report@0.1", "awl/work-report@0.2", REPORT_SPEC]);
   });
 
   test("a pass carries the staged tools, and a child pass may not allow them", async () => {

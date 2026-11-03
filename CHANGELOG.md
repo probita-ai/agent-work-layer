@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.9.1 — 2026-11-02
+
+Both packages: `agent-work-layer` 0.9.1 and `agent-work-layer-mcp` 0.9.1. No code changes; the same as 0.9.0. Published again so that npm's search lists both packages: since the 0.9.0 publish, neither showed up when searching for its own name.
+
+### Changed
+
+- Tests only, not in the packages: the settle and retry CLI tests now separate evidence from permission (#50, thanks @suirindo). One shows what happens when a worker settles with a false note, one settles `ok` from a receiver's record without resending, and one settles `not_run` after the receiver stopped before acting, so the manager allows exactly one retry.
+
 ## 0.9.0 — 2026-10-26
 
 Both packages: `agent-work-layer` 0.9.0 and `agent-work-layer-mcp` 0.9.0. Spec v0.4; document formats are unchanged. New events on approved orders (SPEC.md §6.4).

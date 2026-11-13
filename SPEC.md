@@ -1,6 +1,6 @@
 # Agent Work Layer (AWL) — Specification v0.4 (draft)
 
-Status: draft · Date: 2026-10-24 · Changes from v0.3: staged tools, whose calls run only once the report is approved: `staged` in the Work Order, `effects` in the Work Report (§4.6), and how the gateway holds and runs them (§9.1); effects that use earlier effects' results, and approving only some effects (§4.6); progress events (§6.2); track records (§6.3); checks O5, R14, R15, R16 and C5. Since then (2026-10-26): unknown effect outcomes, and recording, settling and retrying effects after approval (§6.4, §9.1 rules 10–11). (2026-11-12): checking reports against what the gateway measured, R17–R19 (§7.3, §9.1 rule 7).
+Status: draft · Date: 2026-10-24 · Changes from v0.3: staged tools, whose calls run only once the report is approved: `staged` in the Work Order, `effects` in the Work Report (§4.6), and how the gateway holds and runs them (§9.1); effects that use earlier effects' results, and approving only some effects (§4.6); progress events (§6.2); track records (§6.3); checks O5, R14, R15, R16 and C5. Since then (2026-10-26): unknown effect outcomes, and recording, settling and retrying effects after approval (§6.4, §9.1 rules 10–11). (2026-11-12): checking reports against what the gateway measured, R17–R19 (§7.3, §9.1 rule 7); the A2A binding (§9.2).
 
 ## 1. Purpose
 
@@ -352,7 +352,7 @@ How AWL documents travel. A desk MAY support several.
 
 - **Files**: `<id>.order.json` and `<id>.report.json` side by side. Good for tests and audit archives.
 - **MCP**: a desk exposed as an MCP server with tools such as `create_work_order`, `submit_work_report` and `review_work_report`. The reference implementation is the `agent-work-layer-mcp` package in this repo.
-- **A2A**: the document travels as a data part of an A2A message with the AWL media type. The A2A task id SHOULD be stored in `metadata.a2a_task_id`.
+- **A2A**: orders, reports and reviews travel as data parts of A2A messages and task artifacts, one A2A task per order (§9.2).
 
 ### 9.1 MCP gateway
 
@@ -377,6 +377,46 @@ A gateway MAY instead run in **observe** mode, for deployments whose own gateway
 A pass does not say what sub-orders the order has, so a pass-mode gateway enforces the whole `awl_budget.tool_calls`; the desk applies R13 when the report arrives.
 
 The gateway cannot measure `usd` or `tokens`; those are checked only when the report arrives (R7, R13), after they are spent. The reference implementation is `awl-desk gateway` in `agent-work-layer-mcp`.
+
+### 9.2 A2A
+
+Over A2A, one order is one A2A task. The manager is the A2A client and the worker the A2A server. The manager's desk holds the order's record and runs every check; the worker only has to send valid documents. The JSON shapes here are A2A v0.3's.
+
+**Parts.** Each AWL document is an A2A data part (`kind: "data"`) whose `data` is the document and whose `metadata.mediaType` names it:
+
+| Document | `metadata.mediaType` |
+|---|---|
+| Work Order | `application/vnd.awl.work-order+json` |
+| Work Report | `application/vnd.awl.work-report+json` |
+| Review | `application/vnd.awl.review+json` |
+
+A **review** is the manager's decision on a submitted report: `{ "order_id": "wo_1", "decision": "approve" | "rework", "reason"?: "...", "effects"?: ["gmail/send#4"] }`. A rework MUST have a `reason`; only an approval may name `effects` (§4.6). A receiver MUST ignore data parts without one of these media types, and MUST refuse an order part that fails the order checks, a report part that fails R1, and a malformed review.
+
+**Agent Card.** A worker that takes Work Orders SHOULD list the extension `https://github.com/probita-ai/agent-work-layer/blob/main/SPEC.md#92-a2a` in its Agent Card's `capabilities.extensions`, with the versions it reads in `params.order_specs` and `params.report_specs`. A manager SHOULD list the same URI in each message's `extensions`.
+
+**Messages.**
+
+| AWL step | Over A2A |
+|---|---|
+| create | the manager sends `message/send` with the order part and no `taskId`; the worker's reply starts the task |
+| decline | the task goes to `rejected`; the status message's text is the reason |
+| accept, start | the task goes to `working`, or straight on to a later state |
+| progress | a status update in `working`; its text is the note |
+| report | an artifact holding the report part; the task goes to `input-required` |
+| answer, rework, approve | the manager sends a message with `taskId` set: the answer as text, or a review part |
+| approved | the task goes to `completed` |
+| cancel | the manager calls `tasks/cancel`; the task goes to `canceled` |
+| expired | the task goes to `failed` |
+
+The manager MAY record the task's id in the order's `metadata.a2a_task_id`, as earlier versions of this section said. Each report sent over A2A MUST carry its `attempt`, and a task's artifacts keep every report sent so far. The manager's desk applies the task's state and each report it does not yet have, in `attempt` order, as the worker's actions (§6). It MUST first authenticate the A2A peer as the order's worker (`to`), since the desk takes those actions on the peer's word (§10.1). A report with an `attempt` other than the next one is refused.
+
+**Task states.** AWL states map to A2A task states as follows. `blocked` and `submitted` both wait for the manager, so both are `input-required`; a task status SHOULD carry the AWL state in `metadata["awl/state"]` and the order id in `metadata["awl/order"]`.
+
+| AWL | `offered` | `accepted`, `working` | `blocked`, `submitted` | `approved` | `declined` | `expired` | `cancelled` |
+|---|---|---|---|---|---|---|---|
+| A2A | `submitted` | `working` | `input-required` | `completed` | `rejected` | `failed` | `canceled` |
+
+Staged effects are unchanged: the worker's gateway (§9.1) holds them, the report lists them, and an approving review chooses which run. The reference implementation is `agent-work-layer/a2a`, with a runnable example in `examples/a2a.ts`.
 
 ## 10. Security
 

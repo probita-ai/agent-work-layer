@@ -34,6 +34,7 @@ Install only the part you use:
 | Validate in a browser, Deno or Bun | `npm install agent-work-layer`, then import `agent-work-layer/validate` | 7 |
 | Validate orders and reports in Python | `pip install agent-work-layer` ([python/](python/)) | 11 |
 | Connect agent sessions (e.g. Claude Code) through MCP | `npx -y agent-work-layer-mcp` ([setup](#run-as-an-mcp-server)) | ~100 |
+| Hand work to another agent over A2A | `npm install agent-work-layer`, then import `agent-work-layer/a2a` ([how](#hand-work-over-a2a)) | 7 |
 | Sign or verify Delegation Passes | `npm install agent-work-layer` ([how](#delegation-pass)) | 7 |
 
 Node.js 20.11 or later. ESM only. Types included. The Python package needs Python 3.9 or later.
@@ -207,6 +208,25 @@ const server = createDeskServer({ desk: new WorkDesk({ store: new FileStore("./.
 await server.connect(transport);
 ```
 
+## Hand work over A2A
+
+Agents that talk [A2A](https://a2a-protocol.org) can hand Work Orders to each other without sharing a desk. One order is one A2A task. The manager keeps the desk and sends the order as a data part; the worker answers with its reports as task artifacts. `agent-work-layer/a2a` has the parts and the state mapping, and doesn't depend on any A2A SDK:
+
+```ts
+import { agentCardExtension, orderPart, recordTask, reviewPart } from "agent-work-layer/a2a";
+
+// Worker: list the extension in its Agent Card, under capabilities.extensions.
+const extension = agentCardExtension();
+
+// Manager, with any A2A client: send the order, then let the desk record what the worker's task says.
+const task = await a2aClient.sendMessage({ message: { kind: "message", role: "user", messageId, parts: [orderPart(order)] } });
+const { record } = await recordTask(desk, order.id, task, "agent:researcher");   // authenticate the peer first
+// Reviews go back on the same task.
+await a2aClient.sendMessage({ message: { kind: "message", role: "user", messageId, taskId: task.id, parts: [reviewPart({ order_id: order.id, decision: "approve" })] } });
+```
+
+`blocked` and `submitted` orders are both `input-required` tasks, with the AWL state in `metadata["awl/state"]`. For a runnable version, run `node examples/a2a.ts` (Node 22.18+): a manager and a worker over A2A JSON-RPC, through a rework to approval. See [SPEC.md §9.2](SPEC.md#92-a2a).
+
 ## CLI
 
 ```sh
@@ -266,6 +286,7 @@ While `working`, the worker can post progress notes. They are recorded as events
 | `signPass`, `verifyPass`, `decodePass`, `PassError` | [Delegation Passes](#delegation-pass): sign, verify (including narrowing against a parent), read |
 | `orderSpecFor`, `reportSpecFor` | The lowest version that has every field a document uses, as the desk writes it |
 | `ORDER_SPEC`, `REPORT_SPEC`, `ORDER_SPECS`, `REPORT_SPECS` | The newest spec version, and every version read |
+| `orderPart`, `reportPart`, `reviewPart`, `readParts`, `taskState`, `taskStatus`, `agentCardExtension`, `recordTask` (from `agent-work-layer/a2a`) | The [A2A binding](#hand-work-over-a2a) |
 | `createDeskServer` (from `agent-work-layer-mcp`) | MCP server for a desk |
 | `createDeskHttpHandler`, `apiKeyAuth`, `bearerAuth`, `AuthError` (from `agent-work-layer-mcp`) | The desk over HTTP, with the actor from each request's credential |
 | `createGateway` (from `agent-work-layer-mcp`) | MCP gateway enforcing an order, or a Delegation Pass, at every tool call |

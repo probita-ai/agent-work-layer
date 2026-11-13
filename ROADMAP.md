@@ -12,11 +12,12 @@ AWL is at spec v0.4 (packages 0.10). The goal is a small format that many agent 
 - **Progress events** — a worker posts notes while it works; managers following the order see them (SPEC.md §6.2).
 - **Track records** — a desk counts what happened to each worker's orders (SPEC.md §6.3).
 - **Reports checked against the gateway** — the gateway records what it measured on the desk, and reports that cite calls it never logged or claim less cost or fewer tools than it counted are rejected (R17–R19, SPEC.md §7.3).
+- **A2A binding** — orders, reports and reviews as A2A data parts, one A2A task per order, with `agent-work-layer/a2a` and a runnable example (SPEC.md §9.2).
 - **Conformance vectors** — JSON documents with the findings each check must report, at least one passing and one failing per rule, in [`conformance/`](conformance/). The TypeScript and Python validators both pass them.
 
 ## Next
 
-- **A2A binding** — carry orders and reports as A2A message parts, with an example. *help wanted*
+- **A2A in Python** — the `agent-work-layer/a2a` helpers for the Python package. *help wanted*
 
 ## Implementations
 

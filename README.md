@@ -317,7 +317,9 @@ import type { DeskStore, OrderRecord } from "agent-work-layer";
 class PostgresStore implements DeskStore {
   async read(id: string): Promise<OrderRecord | null> { /* SELECT */ }
   async insert(record: OrderRecord) { /* INSERT, throw AwlError("ALREADY_EXISTS") on conflict */ }
-  async update(record: OrderRecord, expectedSeq: number) { /* UPDATE ... WHERE last_seq = expectedSeq, else AwlError("CONFLICT") */ }
+  async update(record: OrderRecord, expectedSeq: number, expectedRev?: number) {
+    /* UPDATE ... WHERE last_seq = expectedSeq AND rev = expectedRev, else AwlError("CONFLICT") */
+  }
   async list() { /* SELECT */ }
 }
 ```

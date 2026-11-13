@@ -1,7 +1,7 @@
 // Reports checked against what the order's gateway measured (SPEC.md §7.3, R17–R19, #53).
 import { describe, test } from "node:test";
 import assert from "node:assert/strict";
-import { FileStore, lastSeq, validateReport, validateUsage } from "../src/index.ts";
+import { FileStore, SqliteStore, lastSeq, validateReport, validateUsage } from "../src/index.ts";
 import type { MeasuredUsage } from "../src/index.ts";
 import { MANAGER, WORKER, newDesk, order, rejectsWith, report, reportInput, rules, tempDir, workingOrder } from "./helpers.ts";
 
@@ -103,5 +103,33 @@ describe("desk.recordUsage", () => {
     await rejectsWith(desk.recordUsage(id, WORKER, { tool_calls: 1, tools_used: "filings/search" } as never), "BAD_REQUEST");
     await desk.submitReport(id, reportInput(), WORKER);
     await rejectsWith(desk.recordUsage(id, WORKER, measured()), "INVALID_TRANSITION");
+  });
+});
+
+describe("writes that record no event still conflict (PR #55 review)", () => {
+  for (const [name, make] of [
+    ["MemoryStore", () => undefined],
+    ["FileStore", () => new FileStore(tempDir())],
+    ["SqliteStore", () => new SqliteStore(":memory:")],
+  ] as const) {
+    test(`${name}: a write based on a read from before a usage write is refused`, async () => {
+      const { desk } = newDesk(make() ? { store: make()! } : {});
+      const id = await workingOrder(desk);
+      const stale = await desk.get(id);
+      await desk.recordUsage(id, WORKER, measured());
+      const fresh = await desk.get(id);
+      assert.equal(lastSeq(fresh), lastSeq(stale));
+      assert.equal(fresh.rev, (stale.rev ?? 0) + 1);
+      // The stale writer would overwrite the measurement; the store refuses it.
+      await rejectsWith(desk.store.update({ ...stale, rev: (stale.rev ?? 0) + 1 }, lastSeq(stale), stale.rev ?? 0), "CONFLICT");
+      assert.deepEqual((await desk.get(id)).usage, measured());
+    });
+  }
+
+  test("a store that ignores rev still works, checking seq only", async () => {
+    const { desk } = newDesk();
+    const id = await workingOrder(desk);
+    const record = await desk.get(id);
+    await desk.store.update(record, lastSeq(record));
   });
 });

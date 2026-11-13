@@ -528,10 +528,12 @@ export class WorkDesk {
   async #mutate(id: string, change: (record: OrderRecord) => void | Promise<void>): Promise<OrderRecord> {
     const record = await this.get(id);
     const expected = lastSeq(record);
+    const rev = record.rev ?? 0;
     const before = record.state;
     await change(record);
     await this.#syncPass(record, before);
-    await this.store.update(record, expected);
+    record.rev = rev + 1;
+    await this.store.update(record, expected, rev);
     return record;
   }
 
@@ -539,10 +541,12 @@ export class WorkDesk {
   async #expireIfDue(record: OrderRecord): Promise<OrderRecord> {
     if (isTerminal(record.state) || this.#clock().getTime() <= Date.parse(record.order.deadline)) return record;
     const expected = lastSeq(record);
+    const rev = record.rev ?? 0;
     const event = this.#record(record, "desk", "expire", "expired", "deadline passed");
     delete record.pass;
+    record.rev = rev + 1;
     try {
-      await this.store.update(record, expected);
+      await this.store.update(record, expected, rev);
     } catch (e) {
       // Another writer got there first; their version wins.
       if (e instanceof AwlError && e.code === "CONFLICT") return this.get(record.order.id);

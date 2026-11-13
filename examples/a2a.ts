@@ -151,14 +151,14 @@ try {
   // 2. The worker's task says it accepted and reported. The manager's desk records both.
   // A real manager authenticates the A2A peer as WORKER before letting the desk act as it.
   say(WORKER, `(task ${task.status.state}) ${task.status.message?.parts.map((p) => ("text" in p ? p.text : "")).join("")}`);
-  let { record } = await recordTask(desk, order.id, task, WORKER);
+  await recordTask(desk, order.id, task, WORKER);
 
   // 3. The fiscal year and the debt note are missing: rework, sent on the same task.
   say(MANAGER, "The debt figure needs its fiscal year and the debt note. Sending it back.");
-  record = await desk.review(order.id, MANAGER, "rework", "State the fiscal year and cite the debt note");
+  await desk.review(order.id, MANAGER, "rework", "State the fiscal year and cite the debt note");
   task = await messageSend([reviewPart({ order_id: order.id, decision: "rework", reason: "State the fiscal year and cite the debt note" })], task.id);
   say(WORKER, `(task ${task.status.state}) ${task.status.message?.parts.map((p) => ("text" in p ? p.text : "")).join("")}`);
-  ({ record } = await recordTask(desk, order.id, task, WORKER));
+  let { record } = await recordTask(desk, order.id, task, WORKER);
 
   // 4. Approved, on the desk and on the task.
   say(MANAGER, `Attempt ${record.reports.length}: "${record.reports.at(-1)!.result.summary}" Approved.`);

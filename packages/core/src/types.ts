@@ -231,6 +231,11 @@ export interface OrderRecord {
   pass?: string;
   /** What the order's gateway has measured so far (§7.3), when one records it. */
   usage?: MeasuredUsage;
+  /**
+   * Counts every write to the record, including those that record no event (a gateway's usage, a
+   * renewed pass). Stores check it with the last event seq, so a write based on a stale read is refused.
+   */
+  rev?: number;
 }
 
 /** A worker's record on one desk (§6.3). */

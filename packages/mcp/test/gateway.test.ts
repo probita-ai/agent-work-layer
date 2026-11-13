@@ -267,6 +267,46 @@ describe("MCP gateway records what it measured on the desk (#53)", () => {
     assert.equal(record.state, "submitted");
   });
 
+  test("seconds include the call that just finished", async () => {
+    let now = Date.parse("2026-01-01T09:00:00Z");
+    const clock = () => new Date(now);
+    const s = await setup({}, { desk: new WorkDesk({ clock }), clock });
+    const callTool = s.upstreams.filings.callTool.bind(s.upstreams.filings);
+    s.upstreams.filings.callTool = (async (...args: Parameters<typeof callTool>) => {
+      now += 30_000;
+      return callTool(...args);
+    }) as typeof callTool;
+    await s.call("filings__search", { q: "risk" });
+    assert.equal((await s.desk.get(s.id)).usage?.seconds, 30);
+  });
+
+  test("a failure to record is an error result that still carries the output and the ref", async () => {
+    const s = await setup();
+    s.desk.recordUsage = async () => {
+      throw new Error("disk full");
+    };
+    const r = await s.call("filings__search", { q: "risk" });
+    assert.equal(r.ok, false);
+    assert.equal(r.texts[0], "filings/search(risk)");
+    assert.match(r.texts.at(-1)!, /ran as filings\/search#1, but the gateway could not record it on the desk: disk full/);
+  });
+
+  test("a conflicting write is retried; an order that has left working is not an error", async () => {
+    const s = await setup();
+    const real = s.desk.recordUsage.bind(s.desk);
+    let conflicts = 2;
+    s.desk.recordUsage = async (...args) => {
+      if (conflicts-- > 0) throw new AwlError("CONFLICT", "raced");
+      return real(...args);
+    };
+    assert.equal((await s.call("filings__search", { q: "a" })).ok, true);
+    assert.equal((await s.desk.get(s.id)).usage?.tool_calls, 1);
+    s.desk.recordUsage = async () => {
+      throw new AwlError("INVALID_TRANSITION", "submitted");
+    };
+    assert.equal((await s.call("filings__search", { q: "b" })).ok, true);
+  });
+
   test("staged calls are recorded too", async () => {
     const s = await setup({ tools: ["gmail/*"], staged: ["gmail/send"] });
     await s.call("gmail__send", { q: "hi" });

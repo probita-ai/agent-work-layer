@@ -21,11 +21,14 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           registry-url: https://registry.npmjs.org
+          # No dependency cache where packages are published (cache poisoning); setup-node 5+
+          # would turn one on by itself if package.json gained a packageManager field.
+          package-manager-cache: false
       - run: npm ci
       - run: npm run check
       # The core first: agent-work-layer-mcp depends on it. A patch release may bump only one
@@ -65,8 +68,8 @@ jobs:
       run:
         working-directory: python
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.13"
       - name: Tag matches the package version

@@ -9,7 +9,7 @@ import type { DeskStore } from "./store.ts";
 import { effectReferences, hasInvalid, heldBySubOrders, validateChildBudgets, validateChildOrder, validateOrder, validateOwnCost, validateReport } from "./validate.ts";
 import { UNITS, orderSpecFor, reportSpecFor } from "./types.ts";
 import type {
-  Action, AgentRef, Amounts, EffectOutcome, Finding, OrderRecord, OrderSummary, State, TrackRecord,
+  Action, AgentRef, Amounts, EffectOutcome, Finding, MeasuredUsage, OrderRecord, OrderSummary, State, TrackRecord,
   WorkEvent, WorkOrder, WorkOrderInput, WorkReport, WorkReportInput,
 } from "./types.ts";
 
@@ -346,6 +346,29 @@ export class WorkDesk {
     });
   }
 
+  /**
+   * Records what the order's gateway measured while the order is `working` (§7.3), so the reports
+   * submitted after it are checked against it (R17–R19). Measurements only add up: counts keep the
+   * larger value and refs and tools are merged, so a later, smaller measurement takes nothing away.
+   * Records no event. The gateway calls it as the order's worker.
+   */
+  async recordUsage(id: string, actor: AgentRef, usage: MeasuredUsage): Promise<OrderRecord> {
+    requireActor(actor);
+    checkUsage(usage);
+    return this.#mutate(id, (rec) => {
+      if (actor !== rec.order.to) throw new AwlError("FORBIDDEN", `"${actor}" may not record usage on order "${id}"`);
+      if (rec.state !== "working") throw new AwlError("INVALID_TRANSITION", `cannot record usage on an order that is ${rec.state}`);
+      const was = rec.usage;
+      const seconds = Math.max(was?.seconds ?? -1, usage.seconds ?? -1);
+      rec.usage = {
+        tool_calls: Math.max(was?.tool_calls ?? 0, usage.tool_calls),
+        ...(seconds >= 0 ? { seconds } : {}),
+        tools_used: [...new Set([...(was?.tools_used ?? []), ...usage.tools_used])],
+        refs: [...new Set([...(was?.refs ?? []), ...usage.refs])],
+      };
+    });
+  }
+
   async accept(id: string, actor: AgentRef): Promise<OrderRecord> {
     return this.#act(id, "accept", actor);
   }
@@ -376,7 +399,8 @@ export class WorkDesk {
   /**
    * Records a report. Invalid reports throw VALIDATION_FAILED and change nothing.
    * Reports over budget or past the deadline are kept and move the order to `expired`. The budget
-   * the order's sub-orders hold counts against its own cost (R13).
+   * the order's sub-orders hold counts against its own cost (R13). When the order's gateway has
+   * recorded usage, the report must agree with it (R17–R19).
    * An `accepted` order is started automatically.
    */
   async submitReport(id: string, input: WorkReportInput, actor: AgentRef): Promise<SubmitResult> {
@@ -398,7 +422,7 @@ export class WorkDesk {
         from: actor,
       } as WorkReport;
 
-      findings = validateReport(report, rec.order);
+      findings = validateReport(report, rec.order, { usage: rec.usage });
       if (hasInvalid(findings)) throw new AwlError("VALIDATION_FAILED", "work report rejected", findings);
       findings.push(...validateOwnCost(report, rec.order, subOrders));
 
@@ -504,10 +528,12 @@ export class WorkDesk {
   async #mutate(id: string, change: (record: OrderRecord) => void | Promise<void>): Promise<OrderRecord> {
     const record = await this.get(id);
     const expected = lastSeq(record);
+    const rev = record.rev ?? 0;
     const before = record.state;
     await change(record);
     await this.#syncPass(record, before);
-    await this.store.update(record, expected);
+    record.rev = rev + 1;
+    await this.store.update(record, expected, rev);
     return record;
   }
 
@@ -515,10 +541,12 @@ export class WorkDesk {
   async #expireIfDue(record: OrderRecord): Promise<OrderRecord> {
     if (isTerminal(record.state) || this.#clock().getTime() <= Date.parse(record.order.deadline)) return record;
     const expected = lastSeq(record);
+    const rev = record.rev ?? 0;
     const event = this.#record(record, "desk", "expire", "expired", "deadline passed");
     delete record.pass;
+    record.rev = rev + 1;
     try {
-      await this.store.update(record, expected);
+      await this.store.update(record, expected, rev);
     } catch (e) {
       // Another writer got there first; their version wins.
       if (e instanceof AwlError && e.code === "CONFLICT") return this.get(record.order.id);
@@ -530,6 +558,15 @@ export class WorkDesk {
 }
 
 const round = (n: number) => Number(n.toFixed(9));
+
+const count = (n: unknown) => typeof n === "number" && Number.isInteger(n) && n >= 0;
+const strings = (xs: unknown) => Array.isArray(xs) && xs.every((x) => typeof x === "string" && x.length > 0);
+
+function checkUsage(usage: MeasuredUsage) {
+  const ok = usage && typeof usage === "object" && count(usage.tool_calls) &&
+    (usage.seconds === undefined || count(usage.seconds)) && strings(usage.tools_used) && strings(usage.refs);
+  if (!ok) throw new AwlError("BAD_REQUEST", "usage needs tool_calls and optional seconds as whole numbers, and tools_used and refs as lists of names");
+}
 
 function requireActor(actor: unknown): asserts actor is string {
   if (typeof actor !== "string" || !actor.trim()) throw new AwlError("BAD_REQUEST", "actor is required");

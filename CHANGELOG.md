@@ -1,5 +1,40 @@
 # Changelog
 
+## 0.10.0 — 2026-11-12
+
+Both packages: `agent-work-layer` 0.10.0 and `agent-work-layer-mcp` 0.10.0. Spec v0.4; document formats are unchanged. New checks R17–R19 (SPEC.md §7.3) and the A2A binding (§9.2).
+
+### Added
+
+- Reports are checked against what the gateway measured (#53), SPEC.md §7.3 and §9.1 rule 7. Until now the worker wrote its own `cost`, `tools_used` and `tool_call` evidence, and nothing compared them with the gateway's log. Now, after each call that reaches a tool or is staged, the gateway records its measurement on the desk before returning the result: calls counted, seconds since start, the tools called and the refs. The desk then rejects a report that:
+  - R17: cites `tool_call` evidence for a call the gateway never logged;
+  - R18: reports fewer `tool_calls` or `seconds` than the gateway counted;
+  - R19: leaves a tool the gateway logged out of `tools_used`.
+
+  A report may still claim more than the gateway saw. Copying `tools_used` and `cost` from `awl_usage` and citing its refs always passes. Orders without a gateway, and gateways working from Delegation Passes, record nothing and are checked as before.
+- `desk.recordUsage(id, actor, usage)` (the worker's identity, while `working`) keeps the measurement on the order as `record.usage`. Measurements only grow, so a smaller one takes nothing away. It records no event, so managers waiting for changes aren't woken on every tool call.
+- Every write to an order increments its `rev`, including writes that record no event (usage, renewed passes). `DeskStore.update(record, expectedSeq, expectedRev?)` takes the `rev` the caller read, and `MemoryStore`, `FileStore` and `SqliteStore` refuse a write whose `rev` has moved on, so a stale write can't undo a measurement. `SqliteStore` checks it atomically, with no schema change. Custom stores keep working; to get the same protection, they should compare `expectedRev` too.
+- If recording usage on the desk fails, the gateway returns the call as an error, still with its output and ref, instead of as a success the desk never saw. A concurrent write is retried, and an order that has left `working` is not an error. The recorded seconds include the call that just finished.
+- `validateReport(report, order, { usage })` and `validateUsage(report, usage)`, also in `agent-work-layer/validate`. New types `MeasuredUsage` and `ReportCheckOptions`. Conformance vectors `R17.json`, `R18.json` and `R19.json`, with a new `usage` check type.
+- The A2A binding (#54), SPEC.md §9.2: one order is one A2A task, and the manager's desk keeps the record. New `agent-work-layer/a2a`, with no A2A SDK and no Node built-ins:
+  - `orderPart`, `reportPart` and `reviewPart` write documents as A2A data parts (`application/vnd.awl.work-order+json`, `…work-report+json`, `…review+json`), and `readParts` reads them back, checked.
+  - `taskState` and `taskStatus` map AWL states to A2A task states.
+  - `agentCardExtension()` is the Agent Card entry a worker lists to say it takes Work Orders.
+  - `recordTask(desk, orderId, task, worker)` applies a worker's A2A task to the manager's desk: it declines or accepts, then submits each new report in `attempt` order.
+
+  `examples/a2a.ts` runs a manager and a worker over A2A JSON-RPC (`message/send`) through a rework to approval.
+
+### Changed
+
+- On a desk whose gateway records usage, a report that cites refs the gateway never gave out, or under-reports cost or tools, is now rejected with `VALIDATION_FAILED`, where 0.9 accepted it. Workers that build reports from `awl_usage` are unaffected.
+- `agent-work-layer-mcp` depends on `agent-work-layer` ^0.10.0, `@modelcontextprotocol/sdk` ^1.32.2 and `zod` ^4.6.7. The lockfile also picks up `@hono/node-server` 2.1.8 (through the MCP SDK), which fixes two moderate advisories (GHSA-qv5m-9pm6-hqp3, GHSA-jpvv-r467-5p4w); this replaces #52.
+
+## python 0.6.0 — 2026-11-12
+
+### Added
+
+- `validate_report(report, order, usage=None)` runs R17–R19 when `usage` is given, and `validate_usage(report, usage)` runs them alone, the same as `agent-work-layer` 0.10.0. Both pass the new conformance vectors.
+
 ## 0.9.1 — 2026-11-02
 
 Both packages: `agent-work-layer` 0.9.1 and `agent-work-layer-mcp` 0.9.1. No code changes; the same as 0.9.0. Published again so that npm's search lists both packages: since the 0.9.0 publish, neither showed up when searching for its own name.

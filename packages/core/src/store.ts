@@ -13,15 +13,19 @@ export interface DeskStore {
   /** Stores a new record. Throws ALREADY_EXISTS if the id is taken. */
   insert(record: OrderRecord): Promise<void>;
   /**
-   * Replaces a record. `expectedSeq` is the last event seq the caller read; the store
-   * throws CONFLICT if the stored record has moved on since (optimistic concurrency).
+   * Replaces a record. `expectedSeq` is the last event seq the caller read, and `expectedRev` its
+   * `rev` (0 when it has none); the store throws CONFLICT if the stored record has moved on since
+   * (optimistic concurrency). Some writes record no event, so a store SHOULD check `expectedRev` too.
    */
-  update(record: OrderRecord, expectedSeq: number): Promise<void>;
+  update(record: OrderRecord, expectedSeq: number, expectedRev?: number): Promise<void>;
   /** Every stored record. */
   list(): Promise<OrderRecord[]>;
 }
 
 const lastSeq = (r: OrderRecord) => r.events.at(-1)?.seq ?? 0;
+/** Whether `current` is still the record a writer read, by its last event seq and, when given, its rev. */
+const unchanged = (current: OrderRecord, expectedSeq: number, expectedRev?: number) =>
+  lastSeq(current) === expectedSeq && (expectedRev === undefined || (current.rev ?? 0) === expectedRev);
 const clone = <T>(value: T): T => structuredClone(value);
 
 /** Keeps records in memory. Useful for tests and single-process apps. */
@@ -38,10 +42,10 @@ export class MemoryStore implements DeskStore {
     this.#records.set(record.order.id, clone(record));
   }
 
-  async update(record: OrderRecord, expectedSeq: number) {
+  async update(record: OrderRecord, expectedSeq: number, expectedRev?: number) {
     const current = this.#records.get(record.order.id);
     if (!current) throw new AwlError("NOT_FOUND", `no order "${record.order.id}"`);
-    if (lastSeq(current) !== expectedSeq) throw new AwlError("CONFLICT", `order "${record.order.id}" changed since it was read`);
+    if (!unchanged(current, expectedSeq, expectedRev)) throw new AwlError("CONFLICT", `order "${record.order.id}" changed since it was read`);
     this.#records.set(record.order.id, clone(record));
   }
 
@@ -109,11 +113,11 @@ export class FileStore implements DeskStore {
     });
   }
 
-  async update(record: OrderRecord, expectedSeq: number) {
+  async update(record: OrderRecord, expectedSeq: number, expectedRev?: number) {
     await this.#serial(record.order.id, async () => {
       const current = await this.read(record.order.id);
       if (!current) throw new AwlError("NOT_FOUND", `no order "${record.order.id}"`);
-      if (lastSeq(current) !== expectedSeq) throw new AwlError("CONFLICT", `order "${record.order.id}" changed since it was read`);
+      if (!unchanged(current, expectedSeq, expectedRev)) throw new AwlError("CONFLICT", `order "${record.order.id}" changed since it was read`);
       await this.#write(record);
     });
   }
@@ -129,7 +133,7 @@ export class FileStore implements DeskStore {
 /**
  * One SQLite database, using Node's built-in `node:sqlite` (Node 22.13+). Pass a file path,
  * or ":memory:" for a throwaway database. Several processes may share a file; the CONFLICT
- * check is atomic (`UPDATE ... WHERE last_seq = ?`).
+ * check is atomic (`UPDATE ... WHERE last_seq = ? AND rev = ?`).
  */
 export class SqliteStore implements DeskStore {
   readonly db: DatabaseSync;
@@ -160,10 +164,11 @@ export class SqliteStore implements DeskStore {
     if (!changes) throw new AwlError("ALREADY_EXISTS", `order "${record.order.id}" already exists`);
   }
 
-  async update(record: OrderRecord, expectedSeq: number) {
+  async update(record: OrderRecord, expectedSeq: number, expectedRev?: number) {
+    const rev = expectedRev === undefined ? "" : " AND coalesce(json_extract(record, '$.rev'), 0) = ?";
     const { changes } = this.db
-      .prepare("UPDATE orders SET last_seq = ?, record = ? WHERE id = ? AND last_seq = ?")
-      .run(lastSeq(record), JSON.stringify(record), record.order.id, expectedSeq);
+      .prepare(`UPDATE orders SET last_seq = ?, record = ? WHERE id = ? AND last_seq = ?${rev}`)
+      .run(lastSeq(record), JSON.stringify(record), record.order.id, expectedSeq, ...(expectedRev === undefined ? [] : [expectedRev]));
     if (changes) return;
     if (!(await this.read(record.order.id))) throw new AwlError("NOT_FOUND", `no order "${record.order.id}"`);
     throw new AwlError("CONFLICT", `order "${record.order.id}" changed since it was read`);

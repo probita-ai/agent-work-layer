@@ -1,6 +1,6 @@
 # Agent Work Layer (AWL) — Specification v0.4 (draft)
 
-Status: draft · Date: 2026-10-24 · Changes from v0.3: staged tools, whose calls run only once the report is approved: `staged` in the Work Order, `effects` in the Work Report (§4.6), and how the gateway holds and runs them (§9.1); effects that use earlier effects' results, and approving only some effects (§4.6); progress events (§6.2); track records (§6.3); checks O5, R14, R15, R16 and C5. Since then (2026-10-26): unknown effect outcomes, and recording, settling and retrying effects after approval (§6.4, §9.1 rules 10–11).
+Status: draft · Date: 2026-10-24 · Changes from v0.3: staged tools, whose calls run only once the report is approved: `staged` in the Work Order, `effects` in the Work Report (§4.6), and how the gateway holds and runs them (§9.1); effects that use earlier effects' results, and approving only some effects (§4.6); progress events (§6.2); track records (§6.3); checks O5, R14, R15, R16 and C5. Since then (2026-10-26): unknown effect outcomes, and recording, settling and retrying effects after approval (§6.4, §9.1 rules 10–11). (2026-11-12): checking reports against what the gateway measured, R17–R19 (§7.3, §9.1 rule 7); the A2A binding (§9.2).
 
 ## 1. Purpose
 
@@ -307,6 +307,23 @@ A desk MUST run these checks. **Invalid** findings reject the document. **Limit*
 | R15 | invalid | Each effect's `ref` is `<tool>#<n>` for its own `tool`, and no two effects share a `ref`. |
 | R16 | invalid | Every reference in an effect's `arguments` (§4.6) names an effect listed before it, and its `pointer`, if present, is a JSON Pointer. |
 
+### 7.3 Report checks against the gateway's measurement
+
+When the order runs behind a gateway that records what it measured on the desk (§9.1 rule 7), the desk MUST also check every report against that measurement. The measurement is cumulative over the order's attempts: the number of calls that reached a tool or were staged (rule 4), the seconds since the order was first started as of the latest such call, the tools those calls went to, and their refs (rule 5). A report may claim more than the gateway saw, for work done outside it, but never less.
+
+```json
+{ "tool_calls": 5, "seconds": 120, "tools_used": ["filings/search", "filings/get_section"],
+  "refs": ["filings/search#1", "filings/get_section#2", "filings/get_section#3", "filings/search#4", "filings/get_section#5"] }
+```
+
+| Id  | Kind    | Rule |
+|-----|---------|------|
+| R17 | invalid | Every `tool_call` evidence item with a `ref` names a call in the measurement's `refs`. |
+| R18 | invalid | `cost.tool_calls` is present and at least the measured `tool_calls`, when that is above 0; `cost.seconds`, when both are present, is at least the measured `seconds`. |
+| R19 | invalid | `tools_used` includes every tool in the measurement's `tools_used`. |
+
+A desk keeps the measurement with the order. It MUST only let it grow: a new measurement keeps the larger count and seconds, and adds its refs and tools to those already there, so recording a smaller one takes nothing away. It MUST accept a measurement only from the order's worker (the identity the gateway acts as) and only while the order is `working`. Recording one is not an event: it changes no state and does not wake anyone waiting for changes. A desk MUST still treat it as a write to the order, so that a concurrent write based on an earlier read, such as a report checked against an older measurement, is refused rather than undoing it. Without a measurement, R17–R19 do not apply.
+
 ## 8. Sub-orders (delegation)
 
 A worker MAY split its job by issuing new orders with `parent_id` set, but only after accepting the parent order. Authority only shrinks:
@@ -335,7 +352,7 @@ How AWL documents travel. A desk MAY support several.
 
 - **Files**: `<id>.order.json` and `<id>.report.json` side by side. Good for tests and audit archives.
 - **MCP**: a desk exposed as an MCP server with tools such as `create_work_order`, `submit_work_report` and `review_work_report`. The reference implementation is the `agent-work-layer-mcp` package in this repo.
-- **A2A**: the document travels as a data part of an A2A message with the AWL media type. The A2A task id SHOULD be stored in `metadata.a2a_task_id`.
+- **A2A**: orders, reports and reviews travel as data parts of A2A messages and task artifacts, one A2A task per order (§9.2).
 
 ### 9.1 MCP gateway
 
@@ -347,7 +364,7 @@ A gateway is an MCP server that sits between one worker and its real MCP servers
 4. Refused calls do not reach the tool and do not count against the budget. A call that reached the tool counts even if the tool returned an error.
 5. It numbers the calls that reach a tool 1, 2, 3… per order, across reworks, and names each `<server>/<tool>#<n>`. That name is the `ref` of `tool_call` evidence (§5.1), and the gateway SHOULD return it with the call's result.
 6. It SHOULD keep a log of every call, refused ones included, that survives a restart, so restarting the gateway does not reset the budget.
-7. The report's `tools_used`, its `cost.tool_calls` and `cost.seconds`, and its `effects` SHOULD be taken from the gateway's log.
+7. The report's `tools_used`, its `cost.tool_calls` and `cost.seconds`, and its `effects` SHOULD be taken from the gateway's log. A gateway working from the desk's order state SHOULD record what it has measured (§7.3) on the desk after each call that reaches a tool or is staged, before returning the call's result, so that the desk can check the report against it (R17–R19). Its seconds run from the order's first start to when it records, so they include the call just made. If recording fails for any reason other than the order having left `working`, the gateway SHOULD return the call as an error, still with its result and ref, rather than as a success the desk has not seen.
 8. Each logged call SHOULD record the authority it ran under: the order id, the report attempt in progress (`reports` + 1) and, when there is one, the `jti` of the Delegation Pass (§10.2). A resumed or reissued job can then tell which grant applied to every earlier call.
 9. It MUST NOT forward a call to a tool the order stages (§4.6). It counts and names the call as rules 4 and 5 say, logs it with its arguments, and returns `pending:<server>/<tool>#<n>` as the result. This applies in observe mode too. It MUST refuse a call to a tool the order does not stage whose arguments contain a reference (§4.6) whose `$ref` names a call to a staged tool (`<server>/<tool>#<n>` with the tool staged), since that result exists only after approval.
 10. It runs staged effects only once the order is `approved`, and only those in the approved report's `effects` that the approval chose (all of them when the `approve` event has no `effects`). Before it runs any, it MUST check that each effect to run matches a staged call in its log with the same `ref`, `tool` and arguments (compared as JSON with object keys in a fixed order), made after the order's last rework (by rule 8's attempt). If any does not match, it runs none. It runs each effect at most once, in the order listed, filling in references to earlier effects' results (§4.6), and logs each outcome under the effect's `ref`: the result when it ran, or why it was skipped. It SHOULD log each result, so that references can still be filled in after a restart. To keep "at most once" across crashes, it SHOULD log that it is about to run an effect before calling the tool, and record an effect started but never finished, or one whose call got no answer (the connection dropped or timed out), as **unknown** rather than failed: it may have happened, so it is never run again. A tool that answered with an error has failed. The gateway SHOULD send each effect's `ref` and order id with the call (over MCP, in `_meta["awl/ref"]` and `_meta["awl/order"]`), so the receiver can drop a call it has already acted on, and an unknown outcome can be settled from the receiver's own records. It SHOULD also keep two commits for the same order from running at once, and SHOULD let a later commit take over from one whose process has died, rather than wait for a person; it MUST NOT take over from one that may still be running. It SHOULD record each run's outcomes on the desk as a `commit` event (§6.4). Running an effect does not count against `budget.tool_calls` again: it was counted when it was staged.
@@ -360,6 +377,46 @@ A gateway MAY instead run in **observe** mode, for deployments whose own gateway
 A pass does not say what sub-orders the order has, so a pass-mode gateway enforces the whole `awl_budget.tool_calls`; the desk applies R13 when the report arrives.
 
 The gateway cannot measure `usd` or `tokens`; those are checked only when the report arrives (R7, R13), after they are spent. The reference implementation is `awl-desk gateway` in `agent-work-layer-mcp`.
+
+### 9.2 A2A
+
+Over A2A, one order is one A2A task. The manager is the A2A client and the worker the A2A server. The manager's desk holds the order's record and runs every check; the worker only has to send valid documents. The JSON shapes here are A2A v0.3's.
+
+**Parts.** Each AWL document is an A2A data part (`kind: "data"`) whose `data` is the document and whose `metadata.mediaType` names it:
+
+| Document | `metadata.mediaType` |
+|---|---|
+| Work Order | `application/vnd.awl.work-order+json` |
+| Work Report | `application/vnd.awl.work-report+json` |
+| Review | `application/vnd.awl.review+json` |
+
+A **review** is the manager's decision on a submitted report: `{ "order_id": "wo_1", "decision": "approve" | "rework", "reason"?: "...", "effects"?: ["gmail/send#4"] }`. A rework MUST have a `reason`; only an approval may name `effects` (§4.6). A receiver MUST ignore data parts without one of these media types, and MUST refuse an order part that fails the order checks, a report part that fails R1, and a malformed review.
+
+**Agent Card.** A worker that takes Work Orders SHOULD list the extension `https://github.com/probita-ai/agent-work-layer/blob/main/SPEC.md#92-a2a` in its Agent Card's `capabilities.extensions`, with the versions it reads in `params.order_specs` and `params.report_specs`. A manager SHOULD list the same URI in each message's `extensions`.
+
+**Messages.**
+
+| AWL step | Over A2A |
+|---|---|
+| create | the manager sends `message/send` with the order part and no `taskId`; the worker's reply starts the task |
+| decline | the task goes to `rejected`; the status message's text is the reason |
+| accept, start | the task goes to `working`, or straight on to a later state |
+| progress | a status update in `working`; its text is the note |
+| report | an artifact holding the report part; the task goes to `input-required` |
+| answer, rework, approve | the manager sends a message with `taskId` set: the answer as text, or a review part |
+| approved | the task goes to `completed` |
+| cancel | the manager calls `tasks/cancel`; the task goes to `canceled` |
+| expired | the task goes to `failed` |
+
+The manager MAY record the task's id in the order's `metadata.a2a_task_id`, as earlier versions of this section said. Each report sent over A2A MUST carry its `attempt`, and a task's artifacts keep every report sent so far. The manager's desk applies the task's state and each report it does not yet have, in `attempt` order, as the worker's actions (§6). It MUST first authenticate the A2A peer as the order's worker (`to`), since the desk takes those actions on the peer's word (§10.1). A report with an `attempt` other than the next one is refused.
+
+**Task states.** AWL states map to A2A task states as follows. `blocked` and `submitted` both wait for the manager, so both are `input-required`; a task status SHOULD carry the AWL state in `metadata["awl/state"]` and the order id in `metadata["awl/order"]`.
+
+| AWL | `offered` | `accepted`, `working` | `blocked`, `submitted` | `approved` | `declined` | `expired` | `cancelled` |
+|---|---|---|---|---|---|---|---|
+| A2A | `submitted` | `working` | `input-required` | `completed` | `rejected` | `failed` | `canceled` |
+
+Staged effects are unchanged: the worker's gateway (§9.1) holds them, the report lists them, and an approving review chooses which run. The reference implementation is `agent-work-layer/a2a`, with a runnable example in `examples/a2a.ts`.
 
 ## 10. Security
 

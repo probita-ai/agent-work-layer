@@ -12,3 +12,11 @@ test("examples/two-agents.ts runs to approval", () => {
   assert.match(r.stdout, /rework \(submitted -> working\)/);
   assert.match(r.stdout, /Final state: approved after 2 reports/);
 });
+
+test("examples/a2a.ts hands the job over A2A to approval", () => {
+  const r = spawnSync(process.execPath, ["examples/a2a.ts"], { encoding: "utf8", cwd: repo });
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /lists the AWL extension/);
+  assert.match(r.stdout, /rework \(submitted -> working\)/);
+  assert.match(r.stdout, /Desk: approved \(A2A: completed\)\. Worker's task: completed\./);
+});

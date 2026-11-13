@@ -45,7 +45,8 @@ if has_invalid(findings):
 | Function | Rules |
 |---|---|
 | `validate_order(order)` | O1–O5 |
-| `validate_report(report, order)` | R1–R12, R14–R16 |
+| `validate_report(report, order, usage=None)` | R1–R12, R14–R16, and R17–R19 when `usage` (what the order's gateway measured) is given |
+| `validate_usage(report, usage)` | R17–R19 only: the report agrees with the gateway's measurement, `{"tool_calls", "seconds"?, "tools_used", "refs"}` |
 | `validate_child_order(child, parent)` | C1–C3 and C5: a sub-order may only narrow its parent's budget, tools and deadline, and may not allow a tool its parent stages |
 | `validate_own_cost(report, order, sub_orders)` | R13: an order's own cost, plus what its sub-orders hold, stays within its budget |
 | `held_by_sub_orders(sub_orders)` | The budget an order's sub-orders hold |

@@ -197,6 +197,21 @@ export interface WorkEvent {
   outcomes?: EffectOutcome[];
 }
 
+/**
+ * What a gateway measured for an order (SPEC.md §7.3): the calls that reached a tool or were staged,
+ * across every attempt. The desk checks the order's reports against it (R17–R19).
+ */
+export interface MeasuredUsage {
+  /** Calls that reached a tool or were staged. */
+  tool_calls: number;
+  /** Seconds since the order was first started, as of the latest call. */
+  seconds?: number;
+  /** Exact tool names, `server/tool`, of those calls. */
+  tools_used: string[];
+  /** Their refs, `server/tool#n`. */
+  refs: string[];
+}
+
 /** A finding from a check in SPEC.md §7–§8. `limit` findings are recorded; `invalid` ones reject. */
 export interface Finding {
   rule: string;
@@ -214,6 +229,13 @@ export interface OrderRecord {
   findings: Finding[];
   /** The worker's current Delegation Pass (SPEC.md §10.2), while the order is `working` on a desk that issues passes. */
   pass?: string;
+  /** What the order's gateway has measured so far (§7.3), when one records it. */
+  usage?: MeasuredUsage;
+  /**
+   * Counts every write to the record, including those that record no event (a gateway's usage, a
+   * renewed pass). Stores check it with the last event seq, so a write based on a stale read is refused.
+   */
+  rev?: number;
 }
 
 /** A worker's record on one desk (§6.3). */

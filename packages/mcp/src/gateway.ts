@@ -9,7 +9,7 @@ import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { CallToolRequestSchema, ErrorCode, ListToolsRequestSchema, McpError } from "@modelcontextprotocol/sdk/types.js";
 import type { CallToolResult, Tool } from "@modelcontextprotocol/sdk/types.js";
 import { AwlError, PassError, approvedEffects, decodePass, effectOutcomes, effectReferences, toolAllowed, verifyPass } from "agent-work-layer";
-import type { Amounts, Effect, EffectOutcome, OrderRecord, PassKeys, WorkDesk } from "agent-work-layer";
+import type { Amounts, Effect, EffectOutcome, MeasuredUsage, OrderRecord, PassKeys, WorkDesk } from "agent-work-layer";
 import { VERSION } from "./version.ts";
 
 export interface GatewayOptions {
@@ -224,10 +224,16 @@ function fillReferences(args: Record<string, unknown>, results: ReadonlyMap<stri
   return out as Record<string, unknown>;
 }
 
+/** When the order was first started, in ms since the epoch, or undefined if it has not been. */
+function startedAt(record: OrderRecord): number | undefined {
+  const start = record.events.find((e) => e.action === "start");
+  return start ? Date.parse(start.at) : undefined;
+}
+
 /** Seconds since the order was first started, or undefined if it has not been. */
 function workingSeconds(record: OrderRecord, now: Date): number | undefined {
-  const start = record.events.find((e) => e.action === "start");
-  return start ? Math.max(0, (now.getTime() - Date.parse(start.at)) / 1000) : undefined;
+  const start = startedAt(record);
+  return start === undefined ? undefined : Math.max(0, (now.getTime() - start) / 1000);
 }
 
 /** Who holds a commit lock: written into the lock file, so a later run can tell whether that process is still alive. */
@@ -322,6 +328,8 @@ interface Authority {
   jti?: string;
   /** Seconds worked so far; unknown in pass mode, so `seconds` is left to the desk's report checks. */
   worked?: number;
+  /** When the order was first started (ms since the epoch); unknown in pass mode. */
+  started?: number;
   /** Budget the order's sub-orders hold, which it may not spend itself (§8); unknown in pass mode. */
   held?: Amounts;
   /** Staged calls up to this attempt were dropped by a rework; unknown in pass mode. */
@@ -373,6 +381,62 @@ export async function createGateway(options: GatewayOptions): Promise<Gateway> {
     return logging;
   };
 
+  /** The calls that reached a tool or were staged, as the desk checks reports against them (§7.3). */
+  function measured(worked?: number): MeasuredUsage {
+    const counted = calls.filter((c) => c.n !== undefined && !c.commit);
+    return {
+      tool_calls: count,
+      ...(worked === undefined ? {} : { seconds: Math.floor(worked) }),
+      tools_used: [...new Set(counted.map((c) => c.tool))],
+      refs: counted.map((c) => c.ref!),
+    };
+  }
+
+  let measuring: Promise<unknown> = Promise.resolve();
+  /**
+   * Records what has been measured on the desk before the call's result goes back, so a report can't
+   * get ahead of it. Seconds are counted from the order's first start up to now, so they include the
+   * call that just finished. A concurrent write to the order is retried. An order that has left
+   * `working` takes no usage: its report is in, and each measurement carries every call so far, so
+   * the next one (after a rework) catches up. Any other failure is thrown.
+   */
+  const recordMeasured = (started?: number) => {
+    if (!desk || passKeys) return Promise.resolve();
+    const usage = measured(started === undefined ? undefined : Math.max(0, (clock().getTime() - started) / 1000));
+    const run = measuring.then(async () => {
+      for (let tries = 1; ; tries++) {
+        try {
+          await desk.recordUsage(orderId, actor, usage);
+          return;
+        } catch (e) {
+          if (e instanceof AwlError && e.code === "INVALID_TRANSITION") return;
+          if (e instanceof AwlError && e.code === "CONFLICT" && tries < 5) continue;
+          throw e;
+        }
+      }
+    });
+    measuring = run.catch(() => {});
+    return run;
+  };
+
+  /**
+   * Records the measurement, and turns a failure into an error result: the call ran and counts, but
+   * the desk can't check the report against it until a later call records it.
+   */
+  async function withMeasurement(result: CallToolResult, ref: string, started?: number): Promise<CallToolResult> {
+    try {
+      await recordMeasured(started);
+      return result;
+    } catch (e) {
+      const why = e instanceof Error ? e.message : String(e);
+      return {
+        ...result,
+        isError: true,
+        content: [...(result.content ?? []), text(`[awl: the call ran as ${ref}, but the gateway could not record it on the desk: ${why}]`)],
+      };
+    }
+  }
+
   async function fromDesk(): Promise<Authority> {
     let record = await desk!.get(orderId);
     if (record.state === "accepted") {
@@ -389,6 +453,7 @@ export async function createGateway(options: GatewayOptions): Promise<Gateway> {
       attempt: record.reports.length + 1,
       ...(record.pass ? { jti: decodePass(record.pass).jti } : {}),
       worked: workingSeconds(record, clock()),
+      started: startedAt(record),
       held: await desk!.held(orderId),
       dropped: reworkedThrough(record),
       ...(record.state !== "working" ? { refusal: new Refusal("ORDER_NOT_WORKING", `order "${orderId}" is ${record.state}`) } : {}),
@@ -719,7 +784,7 @@ export async function createGateway(options: GatewayOptions): Promise<Gateway> {
         n, ref, tool: qualified, order_id: orderId, ...grant(auth), at, outcome: "staged", arguments: args,
         ...(violation ? { violation: violation.code, message: violation.message } : {}),
       });
-      return {
+      return withMeasurement({
         content: [
           text(`pending:${ref}`),
           text(
@@ -728,7 +793,7 @@ export async function createGateway(options: GatewayOptions): Promise<Gateway> {
           ),
         ],
         _meta: { ...tags, "awl/staged": true },
-      };
+      }, ref, auth?.started);
     }
 
     const started = Date.now();
@@ -748,11 +813,11 @@ export async function createGateway(options: GatewayOptions): Promise<Gateway> {
       ...(violation ? { violation: violation.code, message: violation.message } : {}),
     });
     const note = violation ? `[awl evidence ref: ${ref}; not allowed by the order: ${violation.message}]` : `[awl evidence ref: ${ref}]`;
-    return {
+    return withMeasurement({
       ...result,
       content: [...(result.content ?? []), text(note)],
       _meta: { ...result._meta, ...tags },
-    };
+    }, ref, auth?.started);
   });
 
   return {

@@ -1,6 +1,6 @@
 {
   "name": "agent-work-layer",
-  "version": "0.9.1",
+  "version": "0.10.0",
   "description": "Work Orders and Work Reports for AI agents: a typed SDK, validator and lifecycle desk. The MCP server is in agent-work-layer-mcp.",
   "keywords": [
     "ai",
@@ -29,6 +29,10 @@
     "./validate": {
       "types": "./dist/validator.d.ts",
       "import": "./dist/validator.js"
+    },
+    "./a2a": {
+      "types": "./dist/a2a.d.ts",
+      "import": "./dist/a2a.js"
     },
     "./schemas/work-order.schema.json": "./schemas/work-order.schema.json",
     "./schemas/work-report.schema.json": "./schemas/work-report.schema.json",

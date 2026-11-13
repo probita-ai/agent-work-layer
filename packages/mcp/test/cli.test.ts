@@ -125,7 +125,7 @@ describe("awl-desk gateway", () => {
     assert.match(early.stderr, /only once its report is approved/);
 
     const effects = [{ ref: "gmail/send#1", tool: "gmail/send", arguments: { q: "hi" } }];
-    await desk.submitReport(id, reportInput({ tools_used: ["gmail/send"], cost: { usd: 0.1, tool_calls: 1 }, effects }), WORKER);
+    await desk.submitReport(id, reportInput({ tools_used: ["gmail/send"], cost: { usd: 0.1, tool_calls: 1 }, effects, evidence: sentEvidence }), WORKER);
     await desk.review(id, MANAGER, "approve");
     const done = spawnSync(process.execPath, [...gateway, "--commit"], { encoding: "utf8" });
     assert.equal(done.status, 0, done.stderr);
@@ -136,6 +136,12 @@ describe("awl-desk gateway", () => {
     assert.equal(r.status, 2);
   });
 });
+
+/** Evidence citing the one call the gateway logged, as R17 requires. */
+const sentEvidence = [
+  { criterion: "c1", type: "tool_call" as const, ref: "gmail/send#1" },
+  { criterion: "c2", type: "note" as const, note: "Debt is in the staged message" },
+];
 
 // Where a commit can stop between the gateway and the service it calls. The receiver counts what reached
 // it on its own, so these check the gateway's log against what actually happened.
@@ -161,7 +167,7 @@ describe("--commit at the crash boundaries", () => {
       await client.close();
     }
     const effects = [{ ref: "gmail/send#1", tool: "gmail/send", arguments: { q: "hi" } }];
-    await desk.submitReport(id, reportInput({ tools_used: ["gmail/send"], cost: { usd: 0.1, tool_calls: 1 }, effects }), WORKER);
+    await desk.submitReport(id, reportInput({ tools_used: ["gmail/send"], cost: { usd: 0.1, tool_calls: 1 }, effects, evidence: sentEvidence }), WORKER);
     await desk.review(id, MANAGER, "approve");
 
     const commit = () => {

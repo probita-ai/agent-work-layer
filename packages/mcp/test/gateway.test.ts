@@ -243,13 +243,89 @@ describe("MCP gateway", () => {
   });
 });
 
+describe("MCP gateway records what it measured on the desk (#53)", () => {
+  test("each call is recorded before its result returns, and a report must agree with it", async () => {
+    const s = await setup();
+    await s.call("filings__search", { q: "risk" });
+    await s.call("filings__get_section", { q: "debt" });
+    await s.call("shell__exec");   // refused: not allowed, so not counted
+    assert.deepEqual((await s.desk.get(s.id)).usage, {
+      tool_calls: 2, seconds: 0, tools_used: ["filings/search", "filings/get_section"], refs: ["filings/search#1", "filings/get_section#2"],
+    });
+
+    const evidence = [
+      { criterion: "c1", type: "tool_call" as const, ref: "filings/search#1" },
+      { criterion: "c2", type: "tool_call" as const, ref: "filings/get_section#7" },
+    ];
+    const bad = await s.desk.submitReport(s.id, reportInput({ evidence, cost: { usd: 0.1, tool_calls: 1 }, tools_used: ["filings/search"] }), WORKER).catch((e) => e);
+    assert.ok(bad instanceof AwlError);
+    assert.deepEqual(bad.findings.map((f) => f.rule).sort(), ["R17", "R18", "R19"]);
+
+    const { tools_used, cost } = await s.gateway.usage();
+    evidence[1].ref = "filings/get_section#2";
+    const { record } = await s.desk.submitReport(s.id, reportInput({ evidence, cost: { usd: 0.1, ...cost }, tools_used }), WORKER);
+    assert.equal(record.state, "submitted");
+  });
+
+  test("seconds include the call that just finished", async () => {
+    let now = Date.parse("2026-01-01T09:00:00Z");
+    const clock = () => new Date(now);
+    const s = await setup({}, { desk: new WorkDesk({ clock }), clock });
+    const callTool = s.upstreams.filings.callTool.bind(s.upstreams.filings);
+    s.upstreams.filings.callTool = (async (...args: Parameters<typeof callTool>) => {
+      now += 30_000;
+      return callTool(...args);
+    }) as typeof callTool;
+    await s.call("filings__search", { q: "risk" });
+    assert.equal((await s.desk.get(s.id)).usage?.seconds, 30);
+  });
+
+  test("a failure to record is an error result that still carries the output and the ref", async () => {
+    const s = await setup();
+    s.desk.recordUsage = async () => {
+      throw new Error("disk full");
+    };
+    const r = await s.call("filings__search", { q: "risk" });
+    assert.equal(r.ok, false);
+    assert.equal(r.texts[0], "filings/search(risk)");
+    assert.match(r.texts.at(-1)!, /ran as filings\/search#1, but the gateway could not record it on the desk: disk full/);
+  });
+
+  test("a conflicting write is retried; an order that has left working is not an error", async () => {
+    const s = await setup();
+    const real = s.desk.recordUsage.bind(s.desk);
+    let conflicts = 2;
+    s.desk.recordUsage = async (...args) => {
+      if (conflicts-- > 0) throw new AwlError("CONFLICT", "raced");
+      return real(...args);
+    };
+    assert.equal((await s.call("filings__search", { q: "a" })).ok, true);
+    assert.equal((await s.desk.get(s.id)).usage?.tool_calls, 1);
+    s.desk.recordUsage = async () => {
+      throw new AwlError("INVALID_TRANSITION", "submitted");
+    };
+    assert.equal((await s.call("filings__search", { q: "b" })).ok, true);
+  });
+
+  test("staged calls are recorded too", async () => {
+    const s = await setup({ tools: ["gmail/*"], staged: ["gmail/send"] });
+    await s.call("gmail__send", { q: "hi" });
+    assert.deepEqual((await s.desk.get(s.id)).usage?.refs, ["gmail/send#1"]);
+  });
+});
+
 describe("MCP gateway with staged tools", () => {
   const STAGED = { tools: ["filings/*", "gmail/*"], staged: ["gmail/send"] };
 
   /** Submits a done report listing the gateway's pending effects, as awl_usage gives them. */
   async function report(s: Awaited<ReturnType<typeof setup>>, overrides: Partial<WorkReportInput> = {}) {
     const usage = await s.gateway.usage();
-    return s.desk.submitReport(s.id, reportInput({ tools_used: usage.tools_used, cost: { usd: 0.1, ...usage.cost }, effects: usage.effects, ...overrides }), WORKER);
+    const ref = usage.calls.find((c) => c.ref && !c.commit)?.ref;
+    const evidence = [
+      ref ? { criterion: "c1", type: "tool_call" as const, ref } : { criterion: "c1", type: "note" as const, note: "No calls" },
+      { criterion: "c2", type: "note" as const, note: "Debt is in the filing" },
+    ];
+    return s.desk.submitReport(s.id, reportInput({ tools_used: usage.tools_used, cost: { usd: 0.1, ...usage.cost }, effects: usage.effects, evidence, ...overrides }), WORKER);
   }
 
   test("holds back a staged call, counts it and returns a placeholder", async () => {
@@ -337,7 +413,8 @@ describe("MCP gateway with staged tools", () => {
     assert.deepEqual((await s.gateway.usage()).effects, []);
 
     await s.call("gmail__send", { q: "draft two" });
-    await s.desk.submitReport(s.id, reportInput({ status: "blocked", evidence: [], questions: ["CC legal?"] }), WORKER);
+    const { tools_used, cost } = await s.gateway.usage();
+    await s.desk.submitReport(s.id, reportInput({ status: "blocked", evidence: [], questions: ["CC legal?"], tools_used, cost: { usd: 0.1, ...cost } }), WORKER);
     await s.desk.answer(s.id, MANAGER, "No");
     await s.call("gmail__send", { q: "draft three" });
     const live = (await s.gateway.usage()).effects;

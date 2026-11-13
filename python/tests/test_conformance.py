@@ -16,6 +16,8 @@ def run(file, v):
         return validate_order(v["order"])
     if file["check"] == "report":
         return validate_report(v["report"], v["order"])
+    if file["check"] == "usage":
+        return validate_report(v["report"], v["order"], usage=v["usage"])
     if file["check"] == "own-cost":
         return validate_own_cost(v["report"], v["order"], v["sub_orders"])
     if file["check"] == "child":

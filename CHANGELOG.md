@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.10.0 — 2026-11-12
+
+Both packages: `agent-work-layer` 0.10.0 and `agent-work-layer-mcp` 0.10.0. Spec v0.4; document formats are unchanged. New checks R17–R19 (SPEC.md §7.3).
+
+### Added
+
+- Reports are checked against what the gateway measured (#53), SPEC.md §7.3 and §9.1 rule 7. Until now the worker wrote its own `cost`, `tools_used` and `tool_call` evidence, and nothing compared them with the gateway's log. Now, after each call that reaches a tool or is staged, the gateway records its measurement on the desk before returning the result: calls counted, seconds since start, the tools called and the refs. The desk then rejects a report that:
+  - R17: cites `tool_call` evidence for a call the gateway never logged;
+  - R18: reports fewer `tool_calls` or `seconds` than the gateway counted;
+  - R19: leaves a tool the gateway logged out of `tools_used`.
+
+  A report may still claim more than the gateway saw. Copying `tools_used` and `cost` from `awl_usage` and citing its refs always passes. Orders without a gateway, and gateways working from Delegation Passes, record nothing and are checked as before.
+- `desk.recordUsage(id, actor, usage)` (the worker's identity, while `working`) keeps the measurement on the order as `record.usage`. Measurements only grow, so a smaller one takes nothing away. It records no event, so managers waiting for changes aren't woken on every tool call.
+- `validateReport(report, order, { usage })` and `validateUsage(report, usage)`, also in `agent-work-layer/validate`. New types `MeasuredUsage` and `ReportCheckOptions`. Conformance vectors `R17.json`, `R18.json` and `R19.json`, with a new `usage` check type.
+
+### Changed
+
+- On a desk whose gateway records usage, a report that cites refs the gateway never gave out, or under-reports cost or tools, is now rejected with `VALIDATION_FAILED`, where 0.9 accepted it. Workers that build reports from `awl_usage` are unaffected.
+- `agent-work-layer-mcp` depends on `agent-work-layer` ^0.10.0, `@modelcontextprotocol/sdk` ^1.32.2 and `zod` ^4.6.7. The lockfile also picks up `@hono/node-server` 2.1.8 (through the MCP SDK), which fixes two moderate advisories (GHSA-qv5m-9pm6-hqp3, GHSA-jpvv-r467-5p4w).
+
+## python 0.6.0 — 2026-11-12
+
+### Added
+
+- `validate_report(report, order, usage=None)` runs R17–R19 when `usage` is given, and `validate_usage(report, usage)` runs them alone, the same as `agent-work-layer` 0.10.0. Both pass the new conformance vectors.
+
 ## 0.9.1 — 2026-11-02
 
 Both packages: `agent-work-layer` 0.9.1 and `agent-work-layer-mcp` 0.9.1. No code changes; the same as 0.9.0. Published again so that npm's search lists both packages: since the 0.9.0 publish, neither showed up when searching for its own name.

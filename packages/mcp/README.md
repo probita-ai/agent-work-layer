@@ -153,6 +153,7 @@ claude mcp add work -e AWL_STORE="$HOME/.awl" -- npx -y agent-work-layer-mcp gat
 - Calls are refused once `budget.tool_calls` or `budget.seconds` is spent, and while the order is not `working`. Tool calls the order's sub-orders hold don't count as its own: with 20 tool calls and a sub-order holding 5, the order itself may make 15. An `accepted` order is started on its first call.
 - Each result ends with an evidence ref such as `filings/search#3`. Cite it as `{ "type": "tool_call", "ref": "filings/search#3" }`.
 - `awl_usage` returns `tools_used`, `cost` and staged `effects` to copy into `submit_work_report`, and every call so far.
+- After each call it records what it has measured on the desk, before the result goes back. The desk then rejects a report that under-reports it: `tool_call` evidence citing a call the gateway never logged (R17), fewer tool calls or seconds than it counted (R18), or a tool it logged left out of `tools_used` (R19). Copying from `awl_usage` always passes. A gateway working from passes doesn't read the desk, so it records nothing.
 - Calls are logged to `<store>/calls/<id>.jsonl`. The log is reloaded on restart, so restarting does not reset the budget.
 
 | Flag | Environment | Default | Meaning |

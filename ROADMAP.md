@@ -1,6 +1,6 @@
 # Roadmap
 
-AWL is at spec v0.4 (packages 0.9). The goal is a small format that many agent frameworks can share. Items marked **help wanted** are good places to start.
+AWL is at spec v0.4 (packages 0.10). The goal is a small format that many agent frameworks can share. Items marked **help wanted** are good places to start.
 
 ## Done
 
@@ -11,6 +11,7 @@ AWL is at spec v0.4 (packages 0.9). The goal is a small format that many agent f
 - **Staged tools** — the gateway holds an order's `staged` tool calls until the manager approves the report, then runs exactly the effects the report listed, or only those the manager chose, filling in references to earlier effects' results (SPEC.md §4.6).
 - **Progress events** — a worker posts notes while it works; managers following the order see them (SPEC.md §6.2).
 - **Track records** — a desk counts what happened to each worker's orders (SPEC.md §6.3).
+- **Reports checked against the gateway** — the gateway records what it measured on the desk, and reports that cite calls it never logged or claim less cost or fewer tools than it counted are rejected (R17–R19, SPEC.md §7.3).
 - **Conformance vectors** — JSON documents with the findings each check must report, at least one passing and one failing per rule, in [`conformance/`](conformance/). The TypeScript and Python validators both pass them.
 
 ## Next

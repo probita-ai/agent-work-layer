@@ -5,7 +5,7 @@ import addFormatsModule from "ajv-formats";
 import type { ErrorObject, ValidateFunction } from "ajv";
 import { workOrderSchema, workReportSchema } from "./generated.ts";
 import { UNITS } from "./types.ts";
-import type { Amounts, Effect, Finding, State, WorkOrder, WorkReport } from "./types.ts";
+import type { Amounts, Effect, Finding, MeasuredUsage, State, WorkOrder, WorkReport } from "./types.ts";
 
 // ajv and ajv-formats are CommonJS; their classes live on `.default` under NodeNext.
 const Ajv2020 = Ajv2020Module.default;
@@ -129,8 +129,16 @@ export function validateOrder(order: unknown): Finding[] {
   return out;
 }
 
-/** Runs report checks R1–R12 and R14–R16 against the order it answers. The order is assumed valid. */
-export function validateReport(report: unknown, order: WorkOrder): Finding[] {
+export interface ReportCheckOptions {
+  /** What the order's gateway measured (§7.3). When given, R17–R19 run too. */
+  usage?: MeasuredUsage;
+}
+
+/**
+ * Runs report checks R1–R12 and R14–R16 against the order it answers, and R17–R19 against what the
+ * gateway measured when `usage` is given. The order is assumed valid.
+ */
+export function validateReport(report: unknown, order: WorkOrder, options: ReportCheckOptions = {}): Finding[] {
   if (!reportShape(report)) return schemaFindings("R1", reportShape.errors);
   const out: Finding[] = [];
   const add = (rule: string, kind: Finding["kind"], path: string, message: string) => out.push(finding(rule, kind, path, message));
@@ -186,6 +194,34 @@ export function validateReport(report: unknown, order: WorkOrder): Finding[] {
     }
     refs.add(e.ref);
   });
+  if (options.usage) out.push(...validateUsage(report, options.usage));
+  return out;
+}
+
+/**
+ * Runs report checks R17–R19 (§7.3): the report agrees with what the order's gateway measured. A report
+ * may claim more than the gateway saw (work done outside it), never less.
+ */
+export function validateUsage(report: Pick<WorkReport, "evidence" | "cost" | "tools_used">, usage: MeasuredUsage): Finding[] {
+  const out: Finding[] = [];
+  const refs = new Set(usage.refs);
+  report.evidence.forEach((e, i) => {
+    if (e.type === "tool_call" && e.ref !== undefined && !refs.has(e.ref)) {
+      out.push(finding("R17", "invalid", `/evidence/${i}/ref`, `"${e.ref}" is not a call the gateway logged`));
+    }
+  });
+  const calls = report.cost.tool_calls;
+  if (usage.tool_calls > 0 && (calls === undefined || calls < usage.tool_calls)) {
+    out.push(finding("R18", "invalid", "/cost/tool_calls", `reports ${calls ?? "no"} tool calls; the gateway counted ${usage.tool_calls}`));
+  }
+  const seconds = report.cost.seconds;
+  if (usage.seconds !== undefined && seconds !== undefined && seconds < usage.seconds) {
+    out.push(finding("R18", "invalid", "/cost/seconds", `reports ${seconds} seconds; the gateway measured at least ${usage.seconds}`));
+  }
+  const used = new Set(report.tools_used);
+  for (const tool of new Set(usage.tools_used)) {
+    if (!used.has(tool)) out.push(finding("R19", "invalid", "/tools_used", `the gateway logged calls to "${tool}"`));
+  }
   return out;
 }
 

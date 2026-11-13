@@ -9,7 +9,7 @@ import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { CallToolRequestSchema, ErrorCode, ListToolsRequestSchema, McpError } from "@modelcontextprotocol/sdk/types.js";
 import type { CallToolResult, Tool } from "@modelcontextprotocol/sdk/types.js";
 import { AwlError, PassError, approvedEffects, decodePass, effectOutcomes, effectReferences, toolAllowed, verifyPass } from "agent-work-layer";
-import type { Amounts, Effect, EffectOutcome, OrderRecord, PassKeys, WorkDesk } from "agent-work-layer";
+import type { Amounts, Effect, EffectOutcome, MeasuredUsage, OrderRecord, PassKeys, WorkDesk } from "agent-work-layer";
 import { VERSION } from "./version.ts";
 
 export interface GatewayOptions {
@@ -373,6 +373,39 @@ export async function createGateway(options: GatewayOptions): Promise<Gateway> {
     return logging;
   };
 
+  /** The calls that reached a tool or were staged, as the desk checks reports against them (§7.3). */
+  function measured(worked?: number): MeasuredUsage {
+    const counted = calls.filter((c) => c.n !== undefined && !c.commit);
+    return {
+      tool_calls: count,
+      ...(worked === undefined ? {} : { seconds: Math.floor(worked) }),
+      tools_used: [...new Set(counted.map((c) => c.tool))],
+      refs: counted.map((c) => c.ref!),
+    };
+  }
+
+  let measuring = Promise.resolve();
+  /**
+   * Records what has been measured on the desk before the call's result goes back, so a report can't
+   * get ahead of it. Each measurement carries every call so far, so one that fails (the order left
+   * `working` meanwhile) is made up by the next.
+   */
+  const recordMeasured = (worked?: number) => {
+    if (!desk || passKeys) return Promise.resolve();
+    const usage = measured(worked);
+    measuring = measuring.then(async () => {
+      for (let tries = 0; tries < 5; tries++) {
+        try {
+          await desk.recordUsage(orderId, actor, usage);
+          return;
+        } catch (e) {
+          if (!(e instanceof AwlError) || e.code !== "CONFLICT") return;
+        }
+      }
+    });
+    return measuring;
+  };
+
   async function fromDesk(): Promise<Authority> {
     let record = await desk!.get(orderId);
     if (record.state === "accepted") {
@@ -719,6 +752,7 @@ export async function createGateway(options: GatewayOptions): Promise<Gateway> {
         n, ref, tool: qualified, order_id: orderId, ...grant(auth), at, outcome: "staged", arguments: args,
         ...(violation ? { violation: violation.code, message: violation.message } : {}),
       });
+      await recordMeasured(auth?.worked);
       return {
         content: [
           text(`pending:${ref}`),
@@ -747,6 +781,7 @@ export async function createGateway(options: GatewayOptions): Promise<Gateway> {
       n, ref, tool: qualified, order_id: orderId, ...grant(auth), at, outcome: result.isError ? "error" : "ok", ms: Date.now() - started,
       ...(violation ? { violation: violation.code, message: violation.message } : {}),
     });
+    await recordMeasured(auth?.worked);
     const note = violation ? `[awl evidence ref: ${ref}; not allowed by the order: ${violation.message}]` : `[awl evidence ref: ${ref}]`;
     return {
       ...result,

@@ -1,6 +1,6 @@
 # Agent Work Layer (AWL) — Specification v0.4 (draft)
 
-Status: draft · Date: 2026-10-24 · Changes from v0.3: staged tools, whose calls run only once the report is approved: `staged` in the Work Order, `effects` in the Work Report (§4.6), and how the gateway holds and runs them (§9.1); effects that use earlier effects' results, and approving only some effects (§4.6); progress events (§6.2); track records (§6.3); checks O5, R14, R15, R16 and C5. Since then (2026-10-26): unknown effect outcomes, and recording, settling and retrying effects after approval (§6.4, §9.1 rules 10–11).
+Status: draft · Date: 2026-10-24 · Changes from v0.3: staged tools, whose calls run only once the report is approved: `staged` in the Work Order, `effects` in the Work Report (§4.6), and how the gateway holds and runs them (§9.1); effects that use earlier effects' results, and approving only some effects (§4.6); progress events (§6.2); track records (§6.3); checks O5, R14, R15, R16 and C5. Since then (2026-10-26): unknown effect outcomes, and recording, settling and retrying effects after approval (§6.4, §9.1 rules 10–11). (2026-11-12): checking reports against what the gateway measured, R17–R19 (§7.3, §9.1 rule 7).
 
 ## 1. Purpose
 
@@ -307,6 +307,23 @@ A desk MUST run these checks. **Invalid** findings reject the document. **Limit*
 | R15 | invalid | Each effect's `ref` is `<tool>#<n>` for its own `tool`, and no two effects share a `ref`. |
 | R16 | invalid | Every reference in an effect's `arguments` (§4.6) names an effect listed before it, and its `pointer`, if present, is a JSON Pointer. |
 
+### 7.3 Report checks against the gateway's measurement
+
+When the order runs behind a gateway that records what it measured on the desk (§9.1 rule 7), the desk MUST also check every report against that measurement. The measurement is cumulative over the order's attempts: the number of calls that reached a tool or were staged (rule 4), the seconds since the order was first started as of the latest such call, the tools those calls went to, and their refs (rule 5). A report may claim more than the gateway saw, for work done outside it, but never less.
+
+```json
+{ "tool_calls": 5, "seconds": 120, "tools_used": ["filings/search", "filings/get_section"],
+  "refs": ["filings/search#1", "filings/get_section#2", "filings/get_section#3", "filings/search#4", "filings/get_section#5"] }
+```
+
+| Id  | Kind    | Rule |
+|-----|---------|------|
+| R17 | invalid | Every `tool_call` evidence item with a `ref` names a call in the measurement's `refs`. |
+| R18 | invalid | `cost.tool_calls` is present and at least the measured `tool_calls`, when that is above 0; `cost.seconds`, when both are present, is at least the measured `seconds`. |
+| R19 | invalid | `tools_used` includes every tool in the measurement's `tools_used`. |
+
+A desk keeps the measurement with the order. It MUST only let it grow: a new measurement keeps the larger count and seconds, and adds its refs and tools to those already there, so recording a smaller one takes nothing away. It MUST accept a measurement only from the order's worker (the identity the gateway acts as) and only while the order is `working`. Recording one is not an event: it changes no state and does not wake anyone waiting for changes. Without a measurement, R17–R19 do not apply.
+
 ## 8. Sub-orders (delegation)
 
 A worker MAY split its job by issuing new orders with `parent_id` set, but only after accepting the parent order. Authority only shrinks:
@@ -347,7 +364,7 @@ A gateway is an MCP server that sits between one worker and its real MCP servers
 4. Refused calls do not reach the tool and do not count against the budget. A call that reached the tool counts even if the tool returned an error.
 5. It numbers the calls that reach a tool 1, 2, 3… per order, across reworks, and names each `<server>/<tool>#<n>`. That name is the `ref` of `tool_call` evidence (§5.1), and the gateway SHOULD return it with the call's result.
 6. It SHOULD keep a log of every call, refused ones included, that survives a restart, so restarting the gateway does not reset the budget.
-7. The report's `tools_used`, its `cost.tool_calls` and `cost.seconds`, and its `effects` SHOULD be taken from the gateway's log.
+7. The report's `tools_used`, its `cost.tool_calls` and `cost.seconds`, and its `effects` SHOULD be taken from the gateway's log. A gateway working from the desk's order state SHOULD record what it has measured (§7.3) on the desk after each call that reaches a tool or is staged, before returning the call's result, so that the desk can check the report against it (R17–R19).
 8. Each logged call SHOULD record the authority it ran under: the order id, the report attempt in progress (`reports` + 1) and, when there is one, the `jti` of the Delegation Pass (§10.2). A resumed or reissued job can then tell which grant applied to every earlier call.
 9. It MUST NOT forward a call to a tool the order stages (§4.6). It counts and names the call as rules 4 and 5 say, logs it with its arguments, and returns `pending:<server>/<tool>#<n>` as the result. This applies in observe mode too. It MUST refuse a call to a tool the order does not stage whose arguments contain a reference (§4.6) whose `$ref` names a call to a staged tool (`<server>/<tool>#<n>` with the tool staged), since that result exists only after approval.
 10. It runs staged effects only once the order is `approved`, and only those in the approved report's `effects` that the approval chose (all of them when the `approve` event has no `effects`). Before it runs any, it MUST check that each effect to run matches a staged call in its log with the same `ref`, `tool` and arguments (compared as JSON with object keys in a fixed order), made after the order's last rework (by rule 8's attempt). If any does not match, it runs none. It runs each effect at most once, in the order listed, filling in references to earlier effects' results (§4.6), and logs each outcome under the effect's `ref`: the result when it ran, or why it was skipped. It SHOULD log each result, so that references can still be filled in after a restart. To keep "at most once" across crashes, it SHOULD log that it is about to run an effect before calling the tool, and record an effect started but never finished, or one whose call got no answer (the connection dropped or timed out), as **unknown** rather than failed: it may have happened, so it is never run again. A tool that answered with an error has failed. The gateway SHOULD send each effect's `ref` and order id with the call (over MCP, in `_meta["awl/ref"]` and `_meta["awl/order"]`), so the receiver can drop a call it has already acted on, and an unknown outcome can be settled from the receiver's own records. It SHOULD also keep two commits for the same order from running at once, and SHOULD let a later commit take over from one whose process has died, rather than wait for a person; it MUST NOT take over from one that may still be running. It SHOULD record each run's outcomes on the desk as a `commit` event (§6.4). Running an effect does not count against `budget.tool_calls` again: it was counted when it was staged.

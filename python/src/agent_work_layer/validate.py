@@ -355,8 +355,9 @@ _MISSING = object()
 _CALL_NUMBER = re.compile(r"^[1-9][0-9]*\Z", re.ASCII)
 
 
-def validate_report(report: Any, order: Any) -> List[Finding]:
-    """Runs report checks R1–R12 and R14–R16 against the order it answers. The order is assumed valid."""
+def validate_report(report: Any, order: Any, usage: Optional[Mapping[str, Any]] = None) -> List[Finding]:
+    """Runs report checks R1–R12 and R14–R16 against the order it answers, and R17–R19 against what
+    the order's gateway measured when ``usage`` is given. The order is assumed valid."""
     report, order = _plain(report), _plain(order)
     shape = _schema_findings("R1", _report_shape.iter_errors(report))
     if shape:
@@ -426,6 +427,34 @@ def validate_report(report: Any, order: Any) -> List[Finding]:
             elif r["pointer"] != "" and not r["pointer"].startswith("/"):
                 add("R16", "invalid", path, f'"{r["pointer"]}" is not a JSON Pointer')
         refs.add(e["ref"])
+    if usage is not None:
+        out.extend(validate_usage(report, usage))
+    return out
+
+
+def validate_usage(report: Any, usage: Mapping[str, Any]) -> List[Finding]:
+    """Runs report checks R17–R19 (§7.3): the report agrees with what the order's gateway measured.
+
+    ``usage`` is ``{tool_calls, seconds?, tools_used, refs}``. A report may claim more than the
+    gateway saw, never less.
+    """
+    report = _plain(report)
+    out: List[Finding] = []
+    logged = set(usage["refs"])
+    for i, e in enumerate(report["evidence"]):
+        if e["type"] == "tool_call" and "ref" in e and e["ref"] not in logged:
+            out.append(Finding("R17", "invalid", f"/evidence/{i}/ref", f'"{e["ref"]}" is not a call the gateway logged'))
+    calls = report["cost"].get("tool_calls")
+    if usage["tool_calls"] > 0 and (calls is None or calls < usage["tool_calls"]):
+        reported = "no" if calls is None else _num(calls)
+        out.append(Finding("R18", "invalid", "/cost/tool_calls", f'reports {reported} tool calls; the gateway counted {usage["tool_calls"]}'))
+    seconds = report["cost"].get("seconds")
+    if usage.get("seconds") is not None and seconds is not None and seconds < usage["seconds"]:
+        out.append(Finding("R18", "invalid", "/cost/seconds", f'reports {_num(seconds)} seconds; the gateway measured at least {usage["seconds"]}'))
+    used = set(report["tools_used"])
+    for tool in dict.fromkeys(usage["tools_used"]):
+        if tool not in used:
+            out.append(Finding("R19", "invalid", "/tools_used", f'the gateway logged calls to "{tool}"'))
     return out
 
 

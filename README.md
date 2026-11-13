@@ -91,6 +91,7 @@ The desk enforces the spec as you go:
 - Evidence for every criterion.
 - Only allowed tools.
 - Cost within budget and finishing before the deadline. Going over either expires the order.
+- Behind the [MCP gateway](#run-as-an-mcp-server), a report can't claim less than the gateway measured: evidence must cite calls it logged, and cost and tools used must cover what it counted.
 - Sub-orders can only narrow their parent's authority. Their budgets come out of the parent's, so a whole tree of sub-orders never spends more than the order at its root.
 - A reissued order can only continue a finished one, so one job never has two live orders.
 
@@ -162,6 +163,8 @@ const findings = validateReport(report, order);
 // [{ rule: "R4", kind: "invalid", path: "/evidence", message: 'no evidence for criterion "c2"' }, ...]
 if (hasInvalid(findings)) reject(findings);
 ```
+
+To check a report against what the order's gateway measured (R17–R19), pass it: `validateReport(report, order, { usage })`. The desk does this itself when the gateway records its measurement ([SPEC.md §7.3](SPEC.md#73-report-checks-against-the-gateways-measurement)).
 
 Every finding carries the rule id from [SPEC.md §7](SPEC.md#7-checks). `invalid` findings reject a document. `limit` findings (over budget, past deadline) are recorded and expire the order.
 
@@ -250,9 +253,9 @@ While `working`, the worker can post progress notes. They are recorded as events
 
 | Export | Purpose |
 |---|---|
-| `WorkDesk` | Runs the lifecycle: `create`, `accept`, `decline`, `start`, `progress`, `submitReport`, `answer`, `review`, `cancel`, `get`, `list`, `subOrders`, `held`, `trackRecord`, `waitForChange`, and `issuePass` when it issues passes. After approval: `recordCommit`, `settle` (worker) and `allowRetry` (manager) |
+| `WorkDesk` | Runs the lifecycle: `create`, `accept`, `decline`, `start`, `progress`, `recordUsage` (from the gateway), `submitReport`, `answer`, `review`, `cancel`, `get`, `list`, `subOrders`, `held`, `trackRecord`, `waitForChange`, and `issuePass` when it issues passes. After approval: `recordCommit`, `settle` (worker) and `allowRetry` (manager) |
 | `MemoryStore`, `FileStore`, `SqliteStore`, `DeskStore` | Storage. Implement `DeskStore` (4 methods) to use a database |
-| `validateOrder`, `validateReport`, `validateChildOrder`, `validateChildBudgets`, `validateOwnCost`, `hasInvalid` | Spec checks, returning `Finding[]` |
+| `validateOrder`, `validateReport`, `validateChildOrder`, `validateChildBudgets`, `validateOwnCost`, `validateUsage`, `hasInvalid` | Spec checks, returning `Finding[]` |
 | `heldBySubOrders` | The budget an order's sub-orders hold, which it may not spend itself |
 | `isWorkOrder`, `isWorkReport` | Type guards |
 | `toolAllowed`, `patternCovered` | Tool pattern matching |
